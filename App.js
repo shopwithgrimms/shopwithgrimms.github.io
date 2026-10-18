@@ -247,6 +247,88 @@ const LISTING_ANALYTICS_METRICS = [
   { key: "offers", label: "Offers", icon: "◇" },
 ];
 
+const ANNOUNCEMENTS = [
+  {
+    id: "workspace-refresh-2026-10",
+    title: "A more focused business workspace",
+    date: "October 18, 2026",
+    body: "The tracker has a clearer left navigation, a tighter workspace, a square month calendar, and a What's new inbox. Your saved business records stay in this browser.",
+  },
+];
+const PAGE_ICON_NAMES = {
+  Dashboard: "dashboard",
+  Components: "components",
+  Products: "products",
+  Listings: "listings",
+  "Listing Analytics": "analytics",
+  Orders: "orders",
+  Production: "production",
+  Reviews: "reviews",
+  Finances: "finances",
+  Calendar: "calendar",
+  Ideas: "ideas",
+  Audit: "audit",
+  Suppliers: "suppliers",
+  "Help & FAQ": "help",
+  Settings: "settings",
+};
+const RECORD_ICON_NAMES = {
+  component: "components",
+  product: "products",
+  listing: "listings",
+  order: "orders",
+  review: "reviews",
+  expense: "finances",
+  task: "audit",
+  event: "calendar",
+  workPlan: "calendar",
+  idea: "ideas",
+  supplier: "suppliers",
+  restock: "components",
+};
+const ICON_PATHS = {
+  dashboard: ["M3 3h8v8H3z", "M13 3h8v5h-8z", "M13 10h8v11h-8z", "M3 13h8v8H3z"],
+  components: ["M12 3 3.5 7.5 12 12l8.5-4.5L12 3Z", "M3.5 7.5V17L12 21V12", "M20.5 7.5V17L12 21"],
+  products: ["M4 7.5 12 3l8 4.5v9L12 21l-8-4.5v-9Z", "M4.5 7.8 12 12l7.5-4.2", "M12 12v9", "M8 5.2l8 4.5"],
+  listings: ["M7 3h8l4 4v14H7z", "M15 3v5h4", "M10 12h6", "M10 16h6"],
+  analytics: ["M3 3v18h18", "m7 14 4-4 4 4 6-7"],
+  orders: ["M5 3h14v18l-3-2-4 2-4-2-3 2V3Z", "M9 8h6", "M9 12h6", "M9 16h3"],
+  production: ["M3 21V9l5 3V8l5 4V5h8v16H3Z", "M16 8h2", "M16 12h2", "M7 17h2"],
+  reviews: ["m12 3 2.7 5.5 6.1.9-4.4 4.3 1 6.1-5.4-2.9-5.4 2.9 1-6.1-4.4-4.3 6.1-.9L12 3Z"],
+  finances: ["M12 2v20", "M17 6H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"],
+  calendar: ["M4 5h16v16H4z", "M8 3v4", "M16 3v4", "M4 9h16", "M8 13h2", "M14 13h2", "M8 17h2"],
+  ideas: ["M9 18h6", "M10 22h4", "M8.2 14.5a7 7 0 1 1 7.6 0c-.9.6-1.3 1.2-1.4 2.5h-4.8c-.1-1.3-.5-1.9-1.4-2.5Z"],
+  audit: ["M4 4h16v16H4z", "M8 9h8", "M8 13h5", "M8 17h8"],
+  suppliers: ["M3 7h11v11H3z", "M14 11h4l3 3v4h-7z", "M7 18.5a1.5 1.5 0 1 0 0 .1", "M18 18.5a1.5 1.5 0 1 0 0 .1"],
+  help: ["M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20Z", "M9.7 9a2.4 2.4 0 1 1 4.5 1.2c-.8 1.1-2.2 1.3-2.2 3", "M12 17h.01"],
+  settings: ["M12 8.3a3.7 3.7 0 1 0 0 7.4 3.7 3.7 0 0 0 0-7.4Z", "m19.4 15 .1.1a1.7 1.7 0 0 1-2.4 2.4l-.1-.1a1.7 1.7 0 0 0-2.9 1.2v.2a1.7 1.7 0 0 1-3.4 0v-.2a1.7 1.7 0 0 0-2.9-1.2l-.1.1a1.7 1.7 0 1 1-2.4-2.4l.1-.1a1.7 1.7 0 0 0-1.2-2.9H4a1.7 1.7 0 0 1 0-3.4h.2a1.7 1.7 0 0 0 1.2-2.9l-.1-.1a1.7 1.7 0 1 1 2.4-2.4l.1.1a1.7 1.7 0 0 0 2.9-1.2V2a1.7 1.7 0 0 1 3.4 0v.2a1.7 1.7 0 0 0 2.9 1.2l.1-.1a1.7 1.7 0 1 1 2.4 2.4l-.1.1a1.7 1.7 0 0 0 1.2 2.9h.2a1.7 1.7 0 0 1 0 3.4h-.2a1.7 1.7 0 0 0-1.2 2.9Z"],
+  mail: ["M3 5h18v14H3z", "m3 7 9 6 9-6"],
+  menu: ["M4 6h16", "M4 12h16", "M4 18h16"],
+  plus: ["M12 5v14", "M5 12h14"],
+  search: ["M11 4a7 7 0 1 0 0 14 7 7 0 0 0 0-14Z", "m16 16 5 5"],
+};
+const ICON_FALLBACKS = {
+  dashboard: "▦", components: "⬡", products: "□", listings: "▤", analytics: "⌁", orders: "▣",
+  production: "⚒", reviews: "☆", finances: "$", calendar: "▦", ideas: "✧", audit: "✓",
+  suppliers: "↗", help: "?", settings: "⚙", mail: "✉", menu: "☰", plus: "+", search: "⌕",
+};
+function AppIcon({ name, size = 18, color = COLORS.muted, strokeWidth = 1.8 }) {
+  if (Platform.OS !== "web") return <Text style={{ color, fontSize: size, lineHeight: size + 3 }}>{ICON_FALLBACKS[name] || "•"}</Text>;
+  return React.createElement("svg", {
+    width: size,
+    height: size,
+    viewBox: "0 0 24 24",
+    fill: "none",
+    stroke: color,
+    strokeWidth,
+    strokeLinecap: "round",
+    strokeLinejoin: "round",
+    "aria-hidden": true,
+    focusable: false,
+    style: { display: "block", flexShrink: 0 },
+  }, (ICON_PATHS[name] || ICON_PATHS.dashboard).map((d, index) => React.createElement("path", { key: index, d })));
+}
+
 const EMPTY_DB = {
   version: 9,
   currency: "USD",
@@ -267,6 +349,7 @@ const EMPTY_DB = {
   onboardingCompleted: false,
   buttonSoundsEnabled: false,
   tutorialCompleted: false,
+  readAnnouncementIds: [],
   components: [],
   products: [],
   listings: [],
@@ -357,7 +440,7 @@ const SIDEBAR_GROUPS = [
   { label: "WORKSPACE", pages: ["Dashboard", "Components", "Products"] },
   { label: "SALES", pages: ["Listings", "Listing Analytics", "Orders", "Reviews"] },
   { label: "OPERATIONS", pages: ["Production", "Finances", "Calendar", "Ideas", "Audit", "Suppliers"] },
-  { label: "SUPPORT", pages: ["Help & FAQ", "Settings"] },
+  { label: "SUPPORT", pages: ["Help & FAQ"] },
 ];
 
 const localDateKey = (date) => {
@@ -1171,7 +1254,7 @@ function Field({ field, value, onChange, onManageOptions }) {
               selectTextOnFocus={field.selectTextOnFocus}
             />
             <Pressable style={styles.dateCalendarButton} onPress={openDatePicker} accessibilityRole="button" accessibilityLabel={"Choose " + field.label + " from calendar"}>
-              <Text style={styles.dateCalendarButtonText}>▦</Text>
+              <AppIcon name="calendar" size={18} color={COLORS.wine} />
             </Pressable>
           </View>
           <Text style={styles.fieldHint}>Type a date or choose one from the calendar. Your date format is set in Settings.</Text>
@@ -2139,9 +2222,9 @@ function Action({ label, onPress, quiet }) {
   );
 }
 
-function Metric({ label, value, sub, color }) {
+function Metric({ label, value, sub, color, compact }) {
   return (
-    <View style={styles.metric}>
+    <View style={[styles.metric, compact && styles.metricCompact]}>
       <Text style={styles.metricLabel}>{label}</Text>
       <Text style={[styles.metricValue, color ? { color } : null]}>{value}</Text>
       {sub ? <Text style={styles.metricSub}>{sub}</Text> : null}
@@ -2150,17 +2233,19 @@ function Metric({ label, value, sub, color }) {
 }
 
 function ScreenDashboardHeader({ title, description, metrics = [], actions = [] }) {
+  const { width } = useWindowDimensions();
+  const compactMetrics = Platform.OS === "web" && width >= 900;
   return <Card style={styles.screenDashboardHeader}>
     <Text style={styles.screenDashboardTitle}>{title}</Text>
     {description ? <Text style={styles.bodyText}>{description}</Text> : null}
-    {metrics.length ? <View style={styles.metricGrid}>{metrics.map((metric) => <Metric key={metric.label} {...metric} />)}</View> : null}
+    {metrics.length ? <View style={[styles.metricGrid, compactMetrics && styles.metricGridCompact]}>{metrics.map((metric) => <Metric key={metric.label} {...metric} compact={compactMetrics} />)}</View> : null}
     {actions.length ? <View style={styles.actionRow}>{actions.map((action) => <Action key={action.label} label={action.label} onPress={action.onPress} quiet={action.quiet} />)}</View> : null}
   </Card>;
 }
 
 export default function App() {
   const { width: viewportWidth } = useWindowDimensions();
-  const wideLayout = Platform.OS === "web" && viewportWidth >= 1040;
+  const wideLayout = Platform.OS === "web" && viewportWidth >= 960;
   useEffect(() => {
     if (Platform.OS !== "web" || typeof document === "undefined") return undefined;
     const layoutStyle = document.createElement("style");
@@ -2179,6 +2264,7 @@ export default function App() {
   const [detailSelection, setDetailSelection] = useState(null);
   const [helpOpen, setHelpOpen] = useState(false);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
+  const [announcementOpen, setAnnouncementOpen] = useState(false);
   const [helpSearch, setHelpSearch] = useState("");
   const [helpExpandedFaq, setHelpExpandedFaq] = useState(0);
   const [helpExpandedGuide, setHelpExpandedGuide] = useState("");
@@ -2231,7 +2317,7 @@ export default function App() {
   const [customColorPicker, setCustomColorPicker] = useState("");
   const [customThemeSections, setCustomThemeSections] = useState({ surfaces: true, typography: false, accents: false, borders: false });
   const [themePickerOpen, setThemePickerOpen] = useState(false);
-  const [settingsSections, setSettingsSections] = useState({ profile: true, appearance: true, marketplaces: true, fees: false, widgets: false, options: false, data: false, archive: false });
+  const [settingsSections, setSettingsSections] = useState({ profile: true, appearance: true, marketplaces: true, fees: false, widgets: false, options: false, data: false, archive: false, announcements: false });
   const [backupOpen, setBackupOpen] = useState(false);
   const [clearDataOpen, setClearDataOpen] = useState(false);
   const [clearConfirmText, setClearConfirmText] = useState("");
@@ -2262,7 +2348,7 @@ export default function App() {
     setExpandedIdeaStatuses(screen === "Ideas" ? ["Ideas"] : []);
     setInventoryHistoryExpanded(false);
     setShowDismissedAttention(false);
-    setSettingsSections({ profile: screen === "Settings", appearance: false, marketplaces: false, fees: false, widgets: false, options: false, data: false, archive: false });
+    setSettingsSections({ profile: screen === "Settings", appearance: false, marketplaces: false, fees: false, widgets: false, options: false, data: false, archive: false, announcements: false });
   }, [screen]);
   const navigateToScreen = (target) => {
     if (!target || target === screen) return;
@@ -2288,7 +2374,7 @@ export default function App() {
   const [selectedDay, setSelectedDay] = useState(TODAY);
   const [nextUpExpanded, setNextUpExpanded] = useState(false);
   const [selectedDateExpanded, setSelectedDateExpanded] = useState(true);
-  const [calendarFiltersExpanded, setCalendarFiltersExpanded] = useState(true);
+  const [calendarFiltersExpanded, setCalendarFiltersExpanded] = useState(false);
   const [calendarCategoryFilter, setCalendarCategoryFilter] = useState("All");
   const [calendarStatusFilter, setCalendarStatusFilter] = useState("All");
   const [calendarPlanStateFilter, setCalendarPlanStateFilter] = useState("All");
@@ -2539,6 +2625,16 @@ export default function App() {
     const updated = recipe(old);
     return updated && updated !== old ? updated : updated || old;
   });
+  const readAnnouncementIds = Array.isArray(db.readAnnouncementIds) ? db.readAnnouncementIds : [];
+  const unreadAnnouncementCount = ANNOUNCEMENTS.filter((message) => !readAnnouncementIds.includes(message.id)).length;
+  const markAnnouncementRead = (messageId) => setData((old) => ({
+    ...old,
+    readAnnouncementIds: Array.from(new Set((Array.isArray(old.readAnnouncementIds) ? old.readAnnouncementIds : []).concat(messageId))),
+  }));
+  const markAllAnnouncementsRead = () => setData((old) => ({
+    ...old,
+    readAnnouncementIds: Array.from(new Set((Array.isArray(old.readAnnouncementIds) ? old.readAnnouncementIds : []).concat(ANNOUNCEMENTS.map((message) => message.id)))),
+  }));
   const saveSortMode = (key, value) => setData((old) => ({ ...old, sortModes: { ...(old.sortModes || {}), [key]: value } }));
   const saveRecord = (type, values, record) => {
     const today = TODAY;
@@ -3684,7 +3780,7 @@ export default function App() {
       setBackupText("");
       setCustomColorPicker("");
       setThemePickerOpen(false);
-      setSettingsSections({ profile: true, appearance: true, marketplaces: true, fees: false, widgets: false, options: false, data: false, archive: false });
+      setSettingsSections({ profile: true, appearance: true, marketplaces: true, fees: false, widgets: false, options: false, data: false, archive: false, announcements: false });
       setBackupOpen(false);
       setClearDataOpen(false);
       setClearConfirmText("");
@@ -4658,6 +4754,8 @@ export default function App() {
         { label: "＋ Work block", onPress: () => beginAdd("workPlan", { date: selectedDay }), quiet: true },
         { label: "Open time tracking", onPress: () => navigateToScreen("Time"), quiet: true },
       ]} />
+      <View style={[styles.calendarWorkspace, wideLayout && styles.calendarWorkspaceWide]}>
+      <View style={[styles.calendarMain, wideLayout && styles.calendarMainWide]}>
       <SettingsAccordion title="Calendar filters" subtitle={filterSummaryParts.join(" · ")} expanded={calendarFiltersExpanded} onPress={() => setCalendarFiltersExpanded((expanded) => !expanded)}>
         <Field field={{ label: "Show", options: categoryOptions }} value={calendarCategoryFilter} onChange={setCalendarCategoryFilter} />
         {calendarCategoryFilter === "All" || calendarCategoryFilter === "Sale statuses" ? <Field field={{ label: "Sale status", options: orderStatusOptions }} value={calendarStatusFilter} onChange={setCalendarStatusFilter} /> : null}
@@ -4679,6 +4777,8 @@ export default function App() {
           </Pressable>
         ))}</View>)}
       </Card>
+      </View>
+      <View style={[styles.calendarAgenda, wideLayout && styles.calendarAgendaWide]}>
       <SettingsAccordion title={dateLabel(selectedDay) + " · Day schedule"} subtitle={dayItems.length + " calendar item" + (dayItems.length === 1 ? "" : "s")} expanded={selectedDateExpanded} onPress={() => setSelectedDateExpanded((expanded) => !expanded)}>
         {dayItems.length ? dayItems.map((item) => renderCalendarItem(item, false)) : <><Text style={styles.emptyTitle}>Nothing scheduled for this date</Text><Text style={styles.bodyText}>Sale status changes, discount dates, and relisting plans appear automatically. Add a task, event, or work block to plan this day.</Text></>}
         <View style={styles.actionRow}>
@@ -4691,6 +4791,8 @@ export default function App() {
         {nextUpItems.length ? nextUpItems.map((item) => renderCalendarItem(item, true)) : <><Text style={styles.bodyText}>Nothing upcoming matches these filters. Add a task, event, or work block, or change the calendar filters.</Text><View style={styles.actionRow}><Action label="＋ Add task" onPress={() => beginAdd("task", { dueDate: TODAY })} /><Action label="＋ Add event" quiet onPress={() => beginAdd("event", { date: TODAY })} /><Action label="＋ Work block" quiet onPress={() => beginAdd("workPlan", { date: TODAY })} /></View></>}
         {upcomingItems.length > nextUpItems.length ? <Text style={styles.fieldHint}>Showing the first 10 upcoming items. Change the date or filters to browse more.</Text> : null}
       </SettingsAccordion>
+      </View>
+      </View>
     </>;
   };
 
@@ -4971,6 +5073,10 @@ export default function App() {
         { label: "＋ Add business record", onPress: () => setAddChooserOpen(true) },
         { label: "Export backup", onPress: exportBackup, quiet: true },
       ]} />
+      <SettingsAccordion title="What’s new messages" subtitle={ANNOUNCEMENTS.length + " published message" + (ANNOUNCEMENTS.length === 1 ? "" : "s")} expanded={settingsSections.announcements} onPress={() => toggleSection("announcements")}>
+        <Text style={styles.bodyText}>These messages appear in the mailbox for every visitor after you publish the website. GitHub Pages is a static website, so messages for everyone are added to the ANNOUNCEMENTS list near the top of App.js, then published to GitHub. Each visitor’s read count is saved in their own browser.</Text>
+        {ANNOUNCEMENTS.map((message) => <View key={message.id} style={styles.announcementSettingsRow}><Text style={styles.fieldLabel}>{message.title}</Text><Text style={styles.recordMeta}>{message.date}</Text><Text style={styles.bodyText}>{message.body}</Text></View>)}
+      </SettingsAccordion>
       <SettingsAccordion title="Business profile" subtitle="Shop details, marketplaces, fee rules, currency, and defaults" expanded={settingsSections.profile} onPress={() => toggleSection("profile")}>
         <View style={styles.infoBanner}><Text style={styles.infoBannerTitle}>Your tracker saves automatically</Text><Text style={styles.infoBannerText}>Changes are saved on this device as you make them. You can export a backup in Data and backups.</Text></View>
         <Field field={{ label: "Business name", placeholder: "Your shop name" }} value={db.businessName} onChange={(value) => saveSettings("businessName", value)} />
@@ -5092,9 +5198,9 @@ export default function App() {
     <>
       <View style={styles.welcomeBoxCompact}><Text style={styles.eyebrow}>BUSINESS TOOLKIT</Text><Text style={styles.welcomeTitle}>All pages</Text><Text style={styles.welcomeText}>Choose any part of your business tracker.</Text></View>
       <View style={styles.moreGrid}>
-        {MORE_ITEMS.map(([name, icon, sub]) => (
-          <Pressable key={name} onPress={() => navigateToScreen(name)} style={styles.moreTile}>
-            <Text style={styles.moreIcon}>{icon}</Text><Text style={styles.moreTitle}>{name}</Text><Text style={styles.moreSub}>{sub}</Text>
+        {MORE_ITEMS.map(([name, _icon, sub]) => (
+            <Pressable key={name} onPress={() => navigateToScreen(name)} style={[styles.moreTile, wideLayout && styles.moreTileWide]}>
+            <View style={styles.moreIcon}><AppIcon name={PAGE_ICON_NAMES[name] || "dashboard"} size={19} color={COLORS.wine} /></View><Text style={styles.moreTitle}>{name}</Text><Text style={styles.moreSub}>{sub}</Text>
           </Pressable>
         ))}
       </View>
@@ -5128,14 +5234,20 @@ export default function App() {
   };
 
   const screenTitle = isFulfillmentPage ? fulfillmentPageTitle : screen === "More" ? "All pages" : screen;
+  const renderSettingsShortcut = () => {
+    const selected = screen === "Settings";
+    return <Pressable accessibilityRole="button" accessibilityLabel="Settings" onPress={() => { navigateRoot("Settings"); setSearch(""); setMobileNavOpen(false); }} style={[styles.sidebarLink, styles.sidebarSettingsLink, selected && styles.sidebarLinkSelected]}>
+      <View style={[styles.sidebarIcon, selected && styles.sidebarIconSelected]}><AppIcon name="settings" size={17} color={selected ? COLORS.onAccent : COLORS.muted} /></View>
+      <Text style={[styles.sidebarLinkText, selected && styles.sidebarLinkTextSelected]}>Settings</Text>
+      {selected ? <View style={styles.sidebarActiveMark} /> : null}
+    </Pressable>;
+  };
   const renderNavigationLinks = () => SIDEBAR_GROUPS.map((group) => <View key={group.label} style={styles.sidebarGroup}>
     <Text style={styles.sidebarGroupTitle}>{group.label}</Text>
     {group.pages.map((page) => {
-      const item = MORE_ITEMS.find(([name]) => name === page);
-      const icon = item ? item[1] : "--";
       const selected = screen === page || (isFulfillmentPage && page === "Orders");
       return <Pressable key={page} accessibilityRole="button" accessibilityLabel={page} onPress={() => { navigateRoot(page); setSearch(""); setMobileNavOpen(false); }} style={[styles.sidebarLink, selected && styles.sidebarLinkSelected]}>
-        <View style={[styles.sidebarIcon, selected && styles.sidebarIconSelected]}><Text style={[styles.sidebarIconText, selected && styles.sidebarIconTextSelected]}>{icon}</Text></View>
+        <View style={[styles.sidebarIcon, selected && styles.sidebarIconSelected]}><AppIcon name={PAGE_ICON_NAMES[page] || "dashboard"} size={17} color={selected ? COLORS.onAccent : COLORS.muted} /></View>
         <Text style={[styles.sidebarLinkText, selected && styles.sidebarLinkTextSelected]}>{page}</Text>
         {selected ? <View style={styles.sidebarActiveMark} /> : null}
       </Pressable>;
@@ -5166,21 +5278,28 @@ export default function App() {
       <StatusBar barStyle={themeMode === "dark" ? "light-content" : "dark-content"} backgroundColor={COLORS.paper} />
       <View style={styles.topBar}>
         <View style={styles.topBarStart}>
-          {!wideLayout ? <Pressable accessibilityRole="button" accessibilityLabel="Open all pages" style={styles.menuButton} onPress={() => setMobileNavOpen(true)}><View style={styles.menuLines}><View style={styles.menuLine} /><View style={styles.menuLine} /><View style={styles.menuLine} /></View></Pressable> : null}
+          {!wideLayout ? <Pressable accessibilityRole="button" accessibilityLabel="Open all pages" style={styles.menuButton} onPress={() => setMobileNavOpen(true)}><AppIcon name="menu" size={19} color={COLORS.ink} /></Pressable> : null}
           <Pressable style={styles.brand} onPress={() => navigateRoot("Dashboard")}><View style={styles.brandMark}><Text style={styles.brandMarkText}>G</Text></View><View><Text style={styles.brandName}>GRIMMS</Text><Text style={styles.brandSub}>BUSINESS TRACKER</Text></View></Pressable>
         </View>
-        <View style={styles.topActions}><Pressable onPress={saveError ? retrySave : undefined} accessibilityLabel={saveError || (saving ? "Saving tracker data" : lastSavedAt ? "Tracker saved" : "Tracker ready")}><Text style={[styles.saveState, saveError && { color: COLORS.red, fontWeight: "700" }]}>{saveError || (saving ? "Saving…" : lastSavedAt ? `Saved ${lastSavedAt.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}` : "Ready")}</Text></Pressable><Pressable accessibilityLabel="Add a business record" style={styles.addCircle} onPress={() => setAddChooserOpen(true)}><Text style={styles.addCircleText}>＋</Text></Pressable></View>
+        <View style={styles.topActions}>
+          <Pressable accessibilityRole="button" accessibilityLabel={"What's new" + (unreadAnnouncementCount ? ", " + unreadAnnouncementCount + " unread" : "")} style={styles.mailboxButton} onPress={() => setAnnouncementOpen(true)}>
+            <AppIcon name="mail" size={19} color={COLORS.ink} />
+            {unreadAnnouncementCount ? <View style={styles.mailCountBadge}><Text style={styles.mailCountText}>{unreadAnnouncementCount > 9 ? "9+" : unreadAnnouncementCount}</Text></View> : null}
+          </Pressable>
+          <Pressable onPress={saveError ? retrySave : undefined} accessibilityLabel={saveError || (saving ? "Saving tracker data" : lastSavedAt ? "Tracker saved" : "Tracker ready")}><Text style={[styles.saveState, saveError && { color: COLORS.red, fontWeight: "700" }]}>{saveError || (saving ? "Saving…" : lastSavedAt ? `Saved ${lastSavedAt.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}` : "Ready")}</Text></Pressable>
+          <Pressable accessibilityLabel="Add a business record" style={styles.addCircle} onPress={() => setAddChooserOpen(true)}><AppIcon name="plus" size={19} color={COLORS.onAccent} /></Pressable>
+        </View>
       </View>
       <View style={[styles.appBody, wideLayout && styles.appBodyWide]}>
-      {wideLayout ? <View style={styles.sidebar}><ScrollView style={styles.sidebarScroll} contentContainerStyle={styles.sidebarContent} showsVerticalScrollIndicator={false}>{renderNavigationLinks()}</ScrollView><View style={styles.sidebarFooter}><Text style={styles.sidebarFooterTitle}>GRIMMS WORKSPACE</Text><Text style={styles.sidebarFooterText}>Keep your records together.</Text></View></View> : null}
+      {wideLayout ? <View style={styles.sidebar}><ScrollView style={styles.sidebarScroll} contentContainerStyle={styles.sidebarContent} showsVerticalScrollIndicator={false}>{renderNavigationLinks()}</ScrollView><View style={styles.sidebarFooter}>{renderSettingsShortcut()}</View></View> : null}
       <View style={styles.contentPane}>
       {screen !== "More" && screen !== "Dashboard" && screen !== "Settings" && screen !== "Help & FAQ" && (
-        <View style={styles.searchWrap}><View style={styles.searchGlyph}><View style={styles.searchLens} /><View style={styles.searchHandle} /></View><TextInput value={search} onChangeText={setSearch} placeholder={"Search " + (isFulfillmentPage ? "products" : screen.toLowerCase())} placeholderTextColor={COLORS.placeholder} style={styles.searchInput} returnKeyType="search" /><Pressable onPress={() => setSearch("")}><Text style={styles.searchClear}>×</Text></Pressable></View>
+        <View style={styles.searchWrap}><AppIcon name="search" size={17} color={COLORS.muted} /><TextInput value={search} onChangeText={setSearch} placeholder={"Search " + (isFulfillmentPage ? "products" : screen.toLowerCase())} placeholderTextColor={COLORS.placeholder} style={styles.searchInput} returnKeyType="search" /><Pressable onPress={() => setSearch("")}><Text style={styles.searchClear}>×</Text></Pressable></View>
       )}
       <View style={styles.screenHeading}><View style={styles.flex}><Text style={styles.screenTitle}>{screenTitle}</Text>{screen !== "Dashboard" ? <Text style={styles.screenSubtitle}>{isFulfillmentPage ? "Products in this fulfillment status" : screen === "Production" ? "Turn materials into finished inventory" : screen === "Ideas" ? "Save and move product ideas through your work" : screen === "Listing Analytics" ? "Record marketplace stats and review performance" : screen === "Help & FAQ" ? "Instructions and answers for your business tools" : "A clear view of your handmade business"}</Text> : <Text style={styles.screenSubtitle}>Your handmade business, in one place</Text>}</View>
         <View style={styles.headerActions}>
           {navigationStack.length > 1 ? <Pressable accessibilityRole="button" accessibilityLabel="Go back" style={styles.headerAdd} onPress={navigateBack}><Text style={styles.headerAddText}>‹ Back</Text></Pressable> : null}
-          <Pressable accessibilityLabel={screenTitle + " help"} style={styles.helpButton} onPress={() => setHelpOpen(true)}><Text style={styles.helpButtonText}>?</Text></Pressable>
+          <Pressable accessibilityLabel={screenTitle + " help"} style={styles.helpButton} onPress={() => setHelpOpen(true)}><AppIcon name="help" size={17} color={COLORS.wine} /></Pressable>
         </View>
       </View>
       <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === "ios" ? "padding" : "height"}>
@@ -5198,6 +5317,37 @@ export default function App() {
           <SafeAreaView style={styles.mobileNavDrawer}>
             <View style={styles.mobileNavHeader}><View><Text style={styles.mobileNavTitle}>All pages</Text><Text style={styles.mobileNavSubtitle}>Choose a workspace area</Text></View><Pressable accessibilityRole="button" onPress={() => setMobileNavOpen(false)}><Text style={styles.modalCancel}>Close</Text></Pressable></View>
             <ScrollView contentContainerStyle={styles.sidebarContent}>{renderNavigationLinks()}</ScrollView>
+            <View style={styles.sidebarFooter}>{renderSettingsShortcut()}</View>
+          </SafeAreaView>
+        </View>
+      </Modal>
+      <Modal visible={announcementOpen} transparent animationType="fade" onRequestClose={() => setAnnouncementOpen(false)}>
+        <View style={styles.announcementOverlay}>
+          <Pressable style={styles.announcementScrim} onPress={() => setAnnouncementOpen(false)} accessibilityLabel="Close What's new inbox" />
+          <SafeAreaView style={styles.announcementPanel}>
+            <View style={styles.announcementHeader}>
+              <View style={styles.flex}>
+                <Text style={styles.announcementTitle}>What’s new</Text>
+                <Text style={styles.announcementSubtitle}>{unreadAnnouncementCount ? unreadAnnouncementCount + " unread message" + (unreadAnnouncementCount === 1 ? "" : "s") : "You’re all caught up"}</Text>
+              </View>
+              {unreadAnnouncementCount ? <Pressable accessibilityRole="button" onPress={markAllAnnouncementsRead} style={styles.announcementMarkAll}><Text style={styles.announcementMarkAllText}>Mark all read</Text></Pressable> : null}
+              <Pressable accessibilityRole="button" onPress={() => setAnnouncementOpen(false)} style={styles.announcementClose}><Text style={styles.modalCancel}>Close</Text></Pressable>
+            </View>
+            <ScrollView style={styles.announcementList} contentContainerStyle={styles.announcementListContent}>
+              {ANNOUNCEMENTS.length ? ANNOUNCEMENTS.map((message) => {
+                const isUnread = !readAnnouncementIds.includes(message.id);
+                return <View key={message.id} style={[styles.announcementMessage, isUnread && styles.announcementUnread]}>
+                  <View style={styles.announcementMessageTop}>
+                    <Text style={styles.announcementMessageTitle}>{message.title}</Text>
+                    {isUnread ? <View style={styles.announcementUnreadDot} /> : null}
+                  </View>
+                  <Text style={styles.announcementDate}>{message.date}</Text>
+                  <Text style={styles.bodyText}>{message.body}</Text>
+                  {isUnread ? <Pressable accessibilityRole="button" onPress={() => markAnnouncementRead(message.id)} style={styles.announcementReadAction}><Text style={styles.announcementMarkAllText}>Mark as read</Text></Pressable> : <Text style={styles.announcementReadLabel}>Read</Text>}
+                </View>;
+              }) : <Text style={styles.bodyText}>There are no announcements yet.</Text>}
+            </ScrollView>
+            <Text style={styles.announcementFootnote}>Updates are published with the website. Your read status is saved in this browser.</Text>
           </SafeAreaView>
         </View>
       </Modal>
@@ -5254,9 +5404,9 @@ export default function App() {
                 ["component", "CM", "Component"], ["product", "PD", "Product"], ["listing", "LS", "Listing"],
                 ["order", "OR", "Sale"], ["review", "RV", "Buyer review"], ["expense", "FN", "Expense"], ["task", "TK", "Task"],
                 ["event", "CL", "Calendar event"], ["workPlan", "TM", "Planned work"], ["idea", "ID", "Product idea"], ["supplier", "SP", "Supplier"], ["restock", "RS", "Restock"],
-              ].map(([type, icon, label]) => (
+              ].map(([type, _icon, label]) => (
                 <Pressable key={type} style={styles.chooserOption} onPress={() => { setAddChooserOpen(false); beginAdd(type); }}>
-                  <Text style={styles.chooserIcon}>{icon}</Text><Text style={styles.chooserLabel}>{label}</Text>
+                  <View style={styles.chooserIcon}><AppIcon name={RECORD_ICON_NAMES[type] || "dashboard"} size={17} color={COLORS.wine} /></View><Text style={styles.chooserLabel}>{label}</Text>
                 </Pressable>
               ))}
             </View>
@@ -5315,23 +5465,20 @@ function makeStyles() { return StyleSheet.create({
   appBody: { flex: 1, minHeight: 0 },
   appBodyWide: { flexDirection: "row" },
   contentPane: { flex: 1, minWidth: 0 },
-  sidebar: { width: 232, backgroundColor: COLORS.card, borderRightWidth: 1, borderRightColor: COLORS.line },
+  sidebar: { width: 218, backgroundColor: COLORS.card, borderRightWidth: 1, borderRightColor: COLORS.line },
   sidebarScroll: { flex: 1 },
-  sidebarContent: { paddingHorizontal: 12, paddingTop: 14, paddingBottom: 12 },
-  sidebarGroup: { marginBottom: 13 },
-  sidebarGroupTitle: { color: COLORS.muted, fontSize: 9, letterSpacing: 1.15, fontWeight: "800", paddingHorizontal: 8, paddingBottom: 5 },
-  sidebarLink: { minHeight: 38, borderRadius: 9, flexDirection: "row", alignItems: "center", gap: 9, paddingHorizontal: 8, marginBottom: 2 },
+  sidebarContent: { paddingHorizontal: 10, paddingTop: 12, paddingBottom: 8 },
+  sidebarGroup: { marginBottom: 8 },
+  sidebarGroupTitle: { color: COLORS.muted, fontSize: 9, letterSpacing: 1.05, fontWeight: "800", paddingHorizontal: 8, paddingBottom: 4 },
+  sidebarLink: { minHeight: 35, borderRadius: 8, flexDirection: "row", alignItems: "center", gap: 9, paddingHorizontal: 8, marginBottom: 1 },
+  sidebarSettingsLink: { minHeight: 40 },
   sidebarLinkSelected: { backgroundColor: COLORS.soft },
-  sidebarIcon: { width: 26, height: 26, borderRadius: 7, backgroundColor: COLORS.softAlt, alignItems: "center", justifyContent: "center" },
+  sidebarIcon: { width: 25, height: 25, borderRadius: 7, backgroundColor: COLORS.softAlt, alignItems: "center", justifyContent: "center" },
   sidebarIconSelected: { backgroundColor: COLORS.wine },
-  sidebarIconText: { color: COLORS.muted, fontSize: 8, fontWeight: "800", letterSpacing: 0.2 },
-  sidebarIconTextSelected: { color: COLORS.onAccent },
-  sidebarLinkText: { flex: 1, color: COLORS.ink, fontSize: 11, fontWeight: "600" },
+  sidebarLinkText: { flex: 1, color: COLORS.ink, fontSize: 12, fontWeight: "600" },
   sidebarLinkTextSelected: { color: COLORS.wine, fontWeight: "800" },
   sidebarActiveMark: { width: 4, height: 4, borderRadius: 2, backgroundColor: COLORS.wine },
-  sidebarFooter: { borderTopWidth: 1, borderTopColor: COLORS.line, paddingHorizontal: 16, paddingVertical: 12 },
-  sidebarFooterTitle: { color: COLORS.muted, fontSize: 8, fontWeight: "800", letterSpacing: 1.1 },
-  sidebarFooterText: { color: COLORS.muted, fontSize: 9, marginTop: 3 },
+  sidebarFooter: { borderTopWidth: 1, borderTopColor: COLORS.line, paddingHorizontal: 10, paddingVertical: 8 },
   topBarStart: { flexDirection: "row", alignItems: "center", gap: 10 },
   menuButton: { width: 34, height: 34, borderRadius: 9, borderWidth: 1, borderColor: COLORS.line, backgroundColor: COLORS.card, alignItems: "center", justifyContent: "center" },
   menuLines: { width: 15, gap: 3 },
@@ -5345,33 +5492,34 @@ function makeStyles() { return StyleSheet.create({
   loading: { flex: 1, alignItems: "center", justifyContent: "center", backgroundColor: COLORS.paper },
   loadingText: { color: COLORS.muted, marginTop: 12, fontSize: 14 },
   logoMark: { color: COLORS.wine, fontSize: 36, fontWeight: "800" },
-  topBar: { height: 58, paddingHorizontal: 16, flexDirection: "row", alignItems: "center", justifyContent: "space-between", borderBottomColor: COLORS.line, borderBottomWidth: StyleSheet.hairlineWidth, backgroundColor: COLORS.card },
+  topBar: { height: 54, paddingHorizontal: 14, flexDirection: "row", alignItems: "center", justifyContent: "space-between", borderBottomColor: COLORS.line, borderBottomWidth: StyleSheet.hairlineWidth, backgroundColor: COLORS.card },
   brand: { flexDirection: "row", alignItems: "center", gap: 10 },
   brandMark: { width: 36, height: 36, borderRadius: 12, backgroundColor: COLORS.wine, alignItems: "center", justifyContent: "center" },
   brandMarkText: { color: COLORS.onAccent, fontSize: 21, fontWeight: "800", fontFamily: Platform.OS === "ios" ? "Georgia" : "serif" },
   brandName: { fontSize: 13, letterSpacing: 2.2, fontWeight: "800", color: COLORS.ink },
   brandSub: { fontSize: 8, letterSpacing: 1.5, color: COLORS.muted, marginTop: 2 },
-  topActions: { flexDirection: "row", alignItems: "center", gap: 11 },
+  topActions: { flexDirection: "row", alignItems: "center", gap: 9 },
   saveState: { color: COLORS.muted, fontSize: 11 },
-  addCircle: { width: 36, height: 36, borderRadius: 18, backgroundColor: COLORS.wine, alignItems: "center", justifyContent: "center" },
-  addCircleText: { color: COLORS.onAccent, fontSize: 24, lineHeight: 27, fontWeight: "400" },
-  searchWrap: { marginHorizontal: 24, marginTop: 8, height: 38, borderRadius: 10, borderWidth: 1, borderColor: COLORS.line, backgroundColor: COLORS.card, flexDirection: "row", alignItems: "center", paddingHorizontal: 10 },
+  mailboxButton: { width: 36, height: 36, borderRadius: 10, borderWidth: 1, borderColor: COLORS.line, backgroundColor: COLORS.card, alignItems: "center", justifyContent: "center", position: "relative" },
+  mailCountBadge: { minWidth: 17, height: 17, borderRadius: 9, backgroundColor: COLORS.red, position: "absolute", right: -5, top: -5, alignItems: "center", justifyContent: "center", paddingHorizontal: 3, borderWidth: 1.5, borderColor: COLORS.card },
+  mailCountText: { color: "#FFFFFF", fontSize: 9, lineHeight: 11, fontWeight: "800", textAlign: "center" },
+  addCircle: { width: 34, height: 34, borderRadius: 17, backgroundColor: COLORS.wine, alignItems: "center", justifyContent: "center" },
+  searchWrap: { marginHorizontal: 14, marginTop: 7, height: 36, borderRadius: 9, borderWidth: 1, borderColor: COLORS.line, backgroundColor: COLORS.card, flexDirection: "row", alignItems: "center", gap: 8, paddingHorizontal: 10 },
   searchGlyph: { width: 18, height: 18, marginRight: 8, justifyContent: "center" },
   searchLens: { width: 10, height: 10, borderRadius: 6, borderWidth: 1.5, borderColor: COLORS.muted, marginLeft: 1, marginTop: -2 },
   searchHandle: { position: "absolute", width: 6, height: 1.5, borderRadius: 1, backgroundColor: COLORS.muted, left: 10, top: 12, transform: [{ rotate: "45deg" }] },
   searchInput: { flex: 1, color: COLORS.ink, fontSize: 14, paddingVertical: 8 },
   searchClear: { color: COLORS.muted, fontSize: 22, paddingHorizontal: 4 },
-  screenHeading: { paddingHorizontal: 24, paddingTop: 11, paddingBottom: 7, flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
-  screenTitle: { color: COLORS.ink, fontSize: 24, fontWeight: "700", letterSpacing: -0.45 },
-  screenSubtitle: { color: COLORS.muted, fontSize: 11, marginTop: 3 },
+  screenHeading: { paddingHorizontal: 18, paddingTop: 8, paddingBottom: 5, flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
+  screenTitle: { color: COLORS.ink, fontSize: 21, fontWeight: "750", letterSpacing: -0.35 },
+  screenSubtitle: { color: COLORS.muted, fontSize: 11, marginTop: 2 },
   headerActions: { flexDirection: "row", alignItems: "center", gap: 7, marginLeft: 8 },
   helpButton: { width: 34, height: 34, borderRadius: 17, borderWidth: 1, borderColor: COLORS.line, backgroundColor: COLORS.card, alignItems: "center", justifyContent: "center" },
-  helpButtonText: { color: COLORS.wine, fontSize: 17, fontWeight: "800" },
   headerAdd: { backgroundColor: COLORS.wine, paddingHorizontal: 13, paddingVertical: 9, borderRadius: 12 },
   headerAddText: { color: COLORS.onAccent, fontSize: 13, fontWeight: "700" },
   mainScroll: { flex: 1 },
-  pageContent: { paddingHorizontal: 16, paddingBottom: 16, maxWidth: 1280, width: "100%", alignSelf: "center" },
-  pageContentWide: { paddingHorizontal: 24 },
+  pageContent: { paddingHorizontal: 13, paddingBottom: 12, maxWidth: 1440, width: "100%", alignSelf: "center" },
+  pageContentWide: { paddingHorizontal: 16 },
   welcomeBox: { backgroundColor: COLORS.wine, padding: 15, borderRadius: 16, marginBottom: 12, overflow: "hidden" },
   welcomeBoxCompact: { backgroundColor: COLORS.wine, padding: 14, borderRadius: 15, marginBottom: 11 },
   heroOrbOne: { position: "absolute", width: 150, height: 150, borderRadius: 75, backgroundColor: "rgba(255,255,255,0.055)", right: -48, top: 4 },
@@ -5391,9 +5539,10 @@ function makeStyles() { return StyleSheet.create({
   primaryButtonFull: { backgroundColor: COLORS.wine, borderRadius: 13, padding: 14, marginTop: 16 },
   primaryButtonFullText: { color: COLORS.onAccent, fontWeight: "700", fontSize: 13, textAlign: "center" },
   sectionHeadingRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginTop: 7, marginBottom: 9 },
-  sectionTitle: { color: COLORS.ink, fontSize: 15, fontWeight: "750", marginTop: 10, marginBottom: 7 },
+  sectionTitle: { color: COLORS.ink, fontSize: 14, fontWeight: "750", marginTop: 6, marginBottom: 5 },
   subtle: { color: COLORS.muted, fontSize: 11 },
-  metricGrid: { flexDirection: "row", flexWrap: "wrap", gap: 9, marginBottom: 8 },
+  metricGrid: { flexDirection: "row", flexWrap: "wrap", gap: 7, marginBottom: 6 },
+  metricGridCompact: { flexWrap: "nowrap" },
   analyticsPlatformBlock: { paddingVertical: 9, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: COLORS.line },
   analyticsMiniGrid: { flexDirection: "row", flexWrap: "wrap", gap: 6, marginTop: 7 },
   analyticsMiniMetric: { width: "31%", minHeight: 48, borderRadius: 9, backgroundColor: COLORS.soft, padding: 7 },
@@ -5403,7 +5552,8 @@ function makeStyles() { return StyleSheet.create({
   analyticsInputRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 8, paddingVertical: 5 },
   analyticsInput: { minHeight: 40, width: 150, borderRadius: 10, borderColor: COLORS.line, borderWidth: 1, paddingHorizontal: 9, color: COLORS.ink, backgroundColor: COLORS.card, fontSize: 12, textAlign: "right" },
   analyticsDateRange: { flexDirection: "row", gap: 8 },
-  metric: { width: "48%", flexGrow: 1, backgroundColor: COLORS.card, borderRadius: 15, borderWidth: 1, borderColor: COLORS.line, padding: 13, minHeight: 76 },
+  metric: { width: "48%", flexGrow: 1, backgroundColor: COLORS.card, borderRadius: 11, borderWidth: 1, borderColor: COLORS.line, padding: 10, minHeight: 64 },
+  metricCompact: { width: 0, flex: 1, minWidth: 0, padding: 8, minHeight: 55 },
   metricLabel: { color: COLORS.muted, fontSize: 10, fontWeight: "600" },
   metricValue: { color: COLORS.ink, fontSize: 19, fontWeight: "700", marginTop: 6 },
   metricSub: { color: COLORS.muted, fontSize: 10, marginTop: 2 },
@@ -5428,14 +5578,14 @@ function makeStyles() { return StyleSheet.create({
   fulfillmentListCount: { color: COLORS.wine, fontSize: 16, fontWeight: "800", width: 30, textAlign: "center" },
   fulfillmentListLabel: { color: COLORS.ink, fontSize: 12, fontWeight: "600", flex: 1 },
   fulfillmentListArrow: { color: COLORS.muted, fontSize: 22, paddingHorizontal: 2 },
-  card: { backgroundColor: COLORS.card, borderWidth: 1, borderColor: COLORS.line, borderRadius: 14, padding: 12, marginBottom: 8 },
-  settingsAccordion: { backgroundColor: COLORS.card, borderWidth: 1, borderColor: COLORS.line, borderRadius: 16, marginBottom: 10, overflow: "hidden" },
-  settingsAccordionHeader: { minHeight: 66, flexDirection: "row", alignItems: "center", gap: 12, paddingHorizontal: 15, paddingVertical: 11, backgroundColor: COLORS.card },
-  settingsAccordionTitle: { color: COLORS.ink, fontSize: 14, fontWeight: "800" },
-  settingsAccordionSubtitle: { color: COLORS.muted, fontSize: 10, lineHeight: 15, marginTop: 3 },
-  settingsAccordionChevron: { width: 28, height: 28, borderRadius: 9, borderWidth: 1, borderColor: COLORS.softLine, backgroundColor: COLORS.softAlt, color: COLORS.ink, fontSize: 20, lineHeight: 25, fontWeight: "500", textAlign: "center", overflow: "hidden" },
-  settingsAccordionContent: { paddingHorizontal: 14, paddingBottom: 13, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: COLORS.line },
-  cardTitle: { color: COLORS.ink, fontSize: 15, fontWeight: "700", marginBottom: 8 },
+  card: { backgroundColor: COLORS.card, borderWidth: 1, borderColor: COLORS.line, borderRadius: 12, padding: 10, marginBottom: 6 },
+  settingsAccordion: { backgroundColor: COLORS.card, borderWidth: 1, borderColor: COLORS.line, borderRadius: 12, marginBottom: 7, overflow: "hidden" },
+  settingsAccordionHeader: { minHeight: 54, flexDirection: "row", alignItems: "center", gap: 10, paddingHorizontal: 12, paddingVertical: 8, backgroundColor: COLORS.card },
+  settingsAccordionTitle: { color: COLORS.ink, fontSize: 13, fontWeight: "800" },
+  settingsAccordionSubtitle: { color: COLORS.muted, fontSize: 10, lineHeight: 14, marginTop: 2 },
+  settingsAccordionChevron: { width: 25, height: 25, borderRadius: 8, borderWidth: 1, borderColor: COLORS.softLine, backgroundColor: COLORS.softAlt, color: COLORS.ink, fontSize: 18, lineHeight: 22, fontWeight: "500", textAlign: "center", overflow: "hidden" },
+  settingsAccordionContent: { paddingHorizontal: 11, paddingBottom: 10, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: COLORS.line },
+  cardTitle: { color: COLORS.ink, fontSize: 14, fontWeight: "700", marginBottom: 6 },
   cardTop: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start", gap: 8 },
   compactOrderCard: { padding: 12 },
   compactComponentCard: { padding: 12, marginBottom: 8 },
@@ -5454,7 +5604,7 @@ function makeStyles() { return StyleSheet.create({
   detailRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginTop: 12, marginBottom: 5, gap: 8 },
   detailText: { color: COLORS.ink, fontSize: 12, fontWeight: "600" },
   bodyText: { color: COLORS.muted, fontSize: 12, lineHeight: 17, marginTop: 5 },
-  actionRow: { flexDirection: "row", flexWrap: "wrap", gap: 6, marginTop: 9 },
+  actionRow: { flexDirection: "row", flexWrap: "wrap", gap: 5, marginTop: 6 },
   actionButton: { paddingVertical: 9, paddingHorizontal: 13, backgroundColor: COLORS.card, borderRadius: 11, borderWidth: 1, borderColor: COLORS.softLine },
   actionQuiet: { backgroundColor: COLORS.card, borderColor: COLORS.softLine },
   actionText: { color: COLORS.wine, fontSize: 11, fontWeight: "700" },
@@ -5483,8 +5633,8 @@ function makeStyles() { return StyleSheet.create({
   quickAddButton: { backgroundColor: COLORS.rose, borderColor: COLORS.line, borderWidth: 1, paddingHorizontal: 12, paddingVertical: 10, borderRadius: 12 },
   quickAddText: { color: COLORS.wineDark, fontSize: 11, fontWeight: "700" },
   infoBanner: { backgroundColor: COLORS.lavender, borderRadius: 15, padding: 14, marginBottom: 12 },
-  screenDashboardHeader: { padding: 12, marginBottom: 8 },
-  screenDashboardTitle: { color: COLORS.ink, fontSize: 18, lineHeight: 23, fontWeight: "800" },
+  screenDashboardHeader: { padding: 10, marginBottom: 6 },
+  screenDashboardTitle: { color: COLORS.ink, fontSize: 17, lineHeight: 21, fontWeight: "800" },
   infoBannerTitle: { color: COLORS.ink, fontSize: 13, fontWeight: "700" },
   infoBannerText: { color: COLORS.muted, fontSize: 11, lineHeight: 16, marginTop: 4 },
   themePickerButton: { minHeight: 62, marginTop: 8, marginBottom: 12, paddingHorizontal: 12, paddingVertical: 10, borderRadius: 12, backgroundColor: COLORS.card, borderWidth: 1, borderColor: COLORS.line, flexDirection: "row", alignItems: "center", gap: 10 },
@@ -5514,7 +5664,7 @@ function makeStyles() { return StyleSheet.create({
   reviewStarsEmpty: { color: COLORS.softLine },
   reviewQuote: { color: COLORS.ink, fontSize: 14, lineHeight: 21, marginTop: 11 },
   reviewResponse: { backgroundColor: COLORS.soft, borderRadius: 12, padding: 11, marginTop: 10 },
-  historyCard: { paddingVertical: 11 },
+  historyCard: { paddingVertical: 9 },
   channelChipRow: { flexDirection: "row", flexWrap: "wrap", gap: 6, marginTop: 10 },
   channelChip: { backgroundColor: COLORS.lavender, borderRadius: 20, paddingHorizontal: 9, paddingVertical: 5, borderWidth: 1, borderColor: COLORS.line },
   channelChipText: { color: COLORS.wineDark, fontSize: 10, fontWeight: "700" },
@@ -5524,12 +5674,12 @@ function makeStyles() { return StyleSheet.create({
   taskDone: { flexDirection: "row", gap: 10, alignItems: "center", paddingVertical: 11 },
   doneMark: { color: COLORS.green, fontSize: 16, fontWeight: "800" },
   doneTitle: { color: COLORS.muted, fontSize: 13, textDecorationLine: "line-through" },
-  fieldWrap: { marginBottom: 13 },
-  fieldLabelRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 8, marginBottom: 6 },
-  fieldLabel: { color: COLORS.ink, fontSize: 11, fontWeight: "700", marginBottom: 6 },
+  fieldWrap: { marginBottom: 9 },
+  fieldLabelRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 8, marginBottom: 4 },
+  fieldLabel: { color: COLORS.ink, fontSize: 11, fontWeight: "700", marginBottom: 4 },
   fieldHelpToggle: { minWidth: 22, height: 22, textAlign: "center", textAlignVertical: "center", color: COLORS.ink, backgroundColor: COLORS.softAlt, borderColor: COLORS.softLine, borderWidth: 1, borderRadius: 11, fontSize: 12, fontWeight: "800", overflow: "hidden" },
   fieldExplanation: { color: COLORS.ink, backgroundColor: COLORS.soft, borderLeftWidth: 3, borderLeftColor: COLORS.wine, borderRadius: 8, paddingVertical: 8, paddingHorizontal: 10, fontSize: 10, lineHeight: 15, marginBottom: 8 },
-  input: { minHeight: 44, borderRadius: 11, borderColor: COLORS.line, borderWidth: 1, paddingHorizontal: 12, paddingVertical: 10, color: COLORS.ink, backgroundColor: COLORS.card, fontSize: 14 },
+  input: { minHeight: 40, borderRadius: 9, borderColor: COLORS.line, borderWidth: 1, paddingHorizontal: 10, paddingVertical: 8, color: COLORS.ink, backgroundColor: COLORS.card, fontSize: 13 },
   timeInputRow: { flexDirection: "row", alignItems: "center", gap: 8 },
   timeTextInput: { flex: 1 },
   timeChooseButton: { minHeight: 44, paddingHorizontal: 13, borderRadius: 11, borderColor: COLORS.line, borderWidth: 1, backgroundColor: COLORS.rose, alignItems: "center", justifyContent: "center" },
@@ -5559,6 +5709,27 @@ function makeStyles() { return StyleSheet.create({
   inlineEditor: { padding: 10, backgroundColor: COLORS.soft, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: COLORS.line },
   optionText: { color: COLORS.ink, fontSize: 13 },
   fieldHint: { color: COLORS.muted, fontSize: 10, lineHeight: 15, marginTop: 5 },
+  announcementOverlay: { flex: 1, alignItems: "center", justifyContent: "center", padding: 16 },
+  announcementScrim: { position: "absolute", left: 0, right: 0, top: 0, bottom: 0, backgroundColor: "rgba(20,18,20,0.42)" },
+  announcementPanel: { width: "100%", maxWidth: 620, maxHeight: "86%", backgroundColor: COLORS.paper, borderRadius: 15, borderWidth: 1, borderColor: COLORS.line, overflow: "hidden" },
+  announcementHeader: { minHeight: 66, flexDirection: "row", alignItems: "center", gap: 12, paddingHorizontal: 16, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: COLORS.line, backgroundColor: COLORS.card },
+  announcementTitle: { color: COLORS.ink, fontSize: 18, fontWeight: "800" },
+  announcementSubtitle: { color: COLORS.muted, fontSize: 11, marginTop: 2 },
+  announcementMarkAll: { paddingHorizontal: 8, paddingVertical: 7 },
+  announcementMarkAllText: { color: COLORS.wine, fontSize: 11, fontWeight: "800" },
+  announcementClose: { paddingHorizontal: 4, paddingVertical: 7 },
+  announcementList: { flexShrink: 1 },
+  announcementListContent: { padding: 12 },
+  announcementMessage: { backgroundColor: COLORS.card, borderWidth: 1, borderColor: COLORS.line, borderRadius: 11, padding: 12, marginBottom: 8 },
+  announcementUnread: { borderColor: COLORS.wine, backgroundColor: COLORS.soft },
+  announcementMessageTop: { flexDirection: "row", alignItems: "center", gap: 8 },
+  announcementMessageTitle: { flex: 1, color: COLORS.ink, fontSize: 14, fontWeight: "800" },
+  announcementUnreadDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: COLORS.wine },
+  announcementDate: { color: COLORS.muted, fontSize: 10, marginTop: 4 },
+  announcementReadAction: { alignSelf: "flex-start", paddingTop: 8 },
+  announcementReadLabel: { color: COLORS.muted, fontSize: 10, fontWeight: "700", marginTop: 8 },
+  announcementFootnote: { color: COLORS.muted, fontSize: 10, lineHeight: 14, paddingHorizontal: 16, paddingVertical: 10, borderTopWidth: 1, borderTopColor: COLORS.line, backgroundColor: COLORS.card },
+  announcementSettingsRow: { paddingVertical: 9, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: COLORS.line },
   modalSafe: { flex: 1, backgroundColor: COLORS.paper },
   modalHeader: { minHeight: 54, paddingHorizontal: 18, flexDirection: "row", alignItems: "center", justifyContent: "space-between", borderBottomWidth: 1, borderBottomColor: COLORS.line },
   modalTitle: { color: COLORS.ink, fontSize: 15, fontWeight: "700" },
@@ -5586,8 +5757,8 @@ function makeStyles() { return StyleSheet.create({
   formHeroEyebrow: { color: COLORS.onAccent, fontSize: 9, fontWeight: "800", letterSpacing: 1.5 },
   formHeroTitle: { color: COLORS.onAccent, fontSize: 22, lineHeight: 27, fontWeight: "800", marginTop: 6 },
   formHeroText: { color: COLORS.onAccent, fontSize: 12, lineHeight: 18, marginTop: 7 },
-  formSection: { backgroundColor: COLORS.card, borderColor: COLORS.line, borderWidth: 1, borderRadius: 17, padding: 14, marginBottom: 12, shadowColor: COLORS.ink, shadowOpacity: 0.035, shadowRadius: 7, shadowOffset: { width: 0, height: 3 }, elevation: 1 },
-  formSectionHeading: { flexDirection: "row", alignItems: "flex-start", gap: 9, marginBottom: 13 },
+  formSection: { backgroundColor: COLORS.card, borderColor: COLORS.line, borderWidth: 1, borderRadius: 12, padding: 11, marginBottom: 8, shadowColor: COLORS.ink, shadowOpacity: 0.025, shadowRadius: 5, shadowOffset: { width: 0, height: 2 }, elevation: 1 },
+  formSectionHeading: { flexDirection: "row", alignItems: "flex-start", gap: 8, marginBottom: 8 },
   formSectionMark: { width: 4, minHeight: 32, borderRadius: 4, backgroundColor: COLORS.wine, marginTop: 2 },
   formSectionTitle: { color: COLORS.ink, fontSize: 14, fontWeight: "800" },
   formSectionText: { color: COLORS.muted, fontSize: 10, lineHeight: 15, marginTop: 3 },
@@ -5608,15 +5779,21 @@ function makeStyles() { return StyleSheet.create({
   optionManagerActions: { flexDirection: "row", gap: 15 },
   discountPlanList: { marginTop: 10, padding: 11, backgroundColor: COLORS.soft, borderWidth: 1, borderColor: COLORS.line, borderRadius: 12 },
   discountPlanRow: { flexDirection: "row", alignItems: "center", borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: COLORS.line, paddingVertical: 10, gap: 10 },
-  calendarCard: { paddingHorizontal: 11, paddingTop: 12 },
+  calendarWorkspace: { flexDirection: "column" },
+  calendarWorkspaceWide: { flexDirection: "row", alignItems: "flex-start", gap: 12 },
+  calendarMain: { width: "100%", minWidth: 0 },
+  calendarMainWide: { flex: 1.15, width: 0, maxWidth: 660 },
+  calendarAgenda: { width: "100%", minWidth: 0 },
+  calendarAgendaWide: { flex: 0.85, width: 0, minWidth: 285, maxWidth: 440 },
+  calendarCard: { width: "100%", maxWidth: 620, paddingHorizontal: 10, paddingTop: 10, alignSelf: "center" },
   monthHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
-  monthArrow: { width: 38, height: 38, alignItems: "center", justifyContent: "center", backgroundColor: COLORS.rose, borderRadius: 12 },
-  monthArrowText: { color: COLORS.wine, fontSize: 26, lineHeight: 28 },
-  monthTitle: { color: COLORS.ink, fontSize: 17, fontWeight: "700" },
-  todayButton: { alignSelf: "flex-end", padding: 6 },
-  calendarWeek: { flexDirection: "row", alignItems: "center", justifyContent: "space-around" },
-  weekDay: { width: "14.28%", textAlign: "center", color: COLORS.muted, fontSize: 10, fontWeight: "700", paddingVertical: 8 },
-  calendarCell: { width: "14.28%", height: 48, borderRadius: 12, alignItems: "center", justifyContent: "center" },
+  monthArrow: { width: 32, height: 32, alignItems: "center", justifyContent: "center", backgroundColor: COLORS.rose, borderRadius: 9 },
+  monthArrowText: { color: COLORS.wine, fontSize: 23, lineHeight: 25 },
+  monthTitle: { color: COLORS.ink, fontSize: 16, fontWeight: "700" },
+  todayButton: { alignSelf: "flex-end", padding: 4 },
+  calendarWeek: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 2 },
+  weekDay: { width: "14%", textAlign: "center", color: COLORS.muted, fontSize: 10, fontWeight: "700", paddingVertical: 6 },
+  calendarCell: { width: "14%", maxWidth: 72, aspectRatio: 1, borderRadius: 10, alignItems: "center", justifyContent: "center", alignSelf: "center" },
   dateInputRow: { flexDirection: "row", alignItems: "center", gap: 8 },
   dateTextInput: { flex: 1 },
   dateCalendarButton: { height: 46, width: 48, borderRadius: 12, borderWidth: 1, borderColor: COLORS.line, backgroundColor: COLORS.rose, alignItems: "center", justifyContent: "center" },
@@ -5689,9 +5866,10 @@ function makeStyles() { return StyleSheet.create({
   ideaLaneEmptyText: { color: COLORS.ink, fontSize: 13, fontWeight: "700", textAlign: "center" },
   ideaLaneEmptyHint: { color: COLORS.muted, fontSize: 11, lineHeight: 16, textAlign: "center", marginBottom: 4 },
   ideaNote: { padding: 12, marginHorizontal: 10, marginBottom: 10, borderRadius: 13, backgroundColor: COLORS.soft, borderWidth: 1, borderColor: COLORS.line },
-  moreGrid: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
-  moreTile: { width: "48%", flexGrow: 1, backgroundColor: COLORS.card, borderWidth: 1, borderColor: COLORS.line, borderRadius: 13, padding: 11, minHeight: 82 },
-  moreIcon: { color: COLORS.wine, fontSize: 11, fontWeight: "800", marginBottom: 5 },
+  moreGrid: { flexDirection: "row", flexWrap: "wrap", gap: 7 },
+  moreTile: { width: "48%", flexGrow: 1, backgroundColor: COLORS.card, borderWidth: 1, borderColor: COLORS.line, borderRadius: 11, padding: 10, minHeight: 76 },
+  moreTileWide: { width: "31%" },
+  moreIcon: { width: 28, height: 28, borderRadius: 8, backgroundColor: COLORS.soft, alignItems: "center", justifyContent: "center", marginBottom: 5 },
   moreTitle: { color: COLORS.ink, fontSize: 13, fontWeight: "700" },
   moreSub: { color: COLORS.muted, fontSize: 10, lineHeight: 14, marginTop: 4 },
   helpHero: { backgroundColor: COLORS.wine, borderRadius: 13, paddingHorizontal: 16, paddingVertical: 14, marginBottom: 10 },
@@ -5726,10 +5904,8 @@ function makeStyles() { return StyleSheet.create({
   chooserCard: { backgroundColor: COLORS.paper, borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 18, paddingBottom: 30 },
   chooserGrid: { flexDirection: "row", flexWrap: "wrap", gap: 9, marginTop: 6 },
   chooserOption: { width: "31%", flexGrow: 1, minHeight: 64, borderRadius: 12, backgroundColor: COLORS.card, borderColor: COLORS.line, borderWidth: 1, alignItems: "center", justifyContent: "center", padding: 7 },
-  chooserIcon: { width: 25, height: 25, borderRadius: 7, overflow: "hidden", color: COLORS.wine, backgroundColor: COLORS.soft, fontSize: 8, fontWeight: "800", textAlign: "center", textAlignVertical: "center" },
+  chooserIcon: { width: 27, height: 27, borderRadius: 8, overflow: "hidden", backgroundColor: COLORS.soft, alignItems: "center", justifyContent: "center", marginBottom: 3 },
   chooserLabel: { color: COLORS.ink, fontSize: 10, fontWeight: "700", marginTop: 4 },
 }); }
 /* eslint-enable react-native/no-unused-styles */
 let styles = makeStyles();
-
-  
