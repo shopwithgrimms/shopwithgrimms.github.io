@@ -2362,6 +2362,10 @@ export default function App() {
   const [productionQty, setProductionQty] = useState("1");
   const [backupText, setBackupText] = useState("");
   const [backupMode, setBackupMode] = useState("restore");
+  const [backupPreview, setBackupPreview] = useState(null);
+  const [backupFeedback, setBackupFeedback] = useState(null);
+  const [backupRestoring, setBackupRestoring] = useState(false);
+  const [backupRestoreComplete, setBackupRestoreComplete] = useState(false);
   const [customColorPicker, setCustomColorPicker] = useState("");
   const [customThemeSections, setCustomThemeSections] = useState({ surfaces: true, typography: false, accents: false, borders: false });
   const [themePickerOpen, setThemePickerOpen] = useState(false);
@@ -3623,6 +3627,9 @@ export default function App() {
   const showBackup = () => {
     setBackupMode("restore");
     setBackupText("");
+    setBackupPreview(null);
+    setBackupFeedback(null);
+    setBackupRestoreComplete(false);
     setBackupOpen(true);
   };
 
@@ -3636,6 +3643,9 @@ export default function App() {
   const exportBackup = async () => {
     setBackupMode("export");
     setBackupText(JSON.stringify(db, null, 2));
+    setBackupPreview(null);
+    setBackupFeedback(null);
+    setBackupRestoreComplete(false);
     setBackupOpen(true);
   };
 
@@ -3656,42 +3666,71 @@ export default function App() {
     }
   };
 
-  const importBackup = () => {
+  const checkBackupText = () => {
+    const rawBackup = String(backupText || "").trim();
+    setBackupPreview(null);
+    setBackupRestoreComplete(false);
+    if (!rawBackup) {
+      setBackupFeedback({ type: "error", text: "Paste the full backup text into the box first." });
+      return;
+    }
     try {
-      const parsed = JSON.parse(backupText);
+      const parsed = JSON.parse(rawBackup);
       const validation = validateTrackerDatabase(parsed);
       if (!validation.ok) {
-        Alert.alert("Backup not recognized", validation.error);
+        setBackupFeedback({ type: "error", text: "This backup could not be checked: " + validation.error });
         return;
       }
       const summary = Object.entries(validation.counts).filter(([, count]) => count > 0).map(([key, count]) => `${count} ${key}`).join(", ") || "an empty tracker";
-      Alert.alert("Review backup", `This backup contains ${summary}. Your current data will be saved as a recovery copy before replacement.`, [
-        { text: "Cancel", style: "cancel" },
-        { text: "Save copy and restore", style: "destructive", onPress: async () => {
-          try {
-            const recoveryCopy = storageRecoveryRaw || JSON.stringify(db);
-            await AsyncStorage.setItem(STORAGE_KEY + ".recovery", recoveryCopy);
-            const componentMax = (parsed.components || []).reduce((max, item) => Math.max(max, Number(String(item.sku || "").match(/(\d+)$/)?.[1]) || 0), 0);
-            const productMax = (parsed.products || []).reduce((max, item) => Math.max(max, Number(String(item.sku || "").match(/(\d+)$/)?.[1]) || 0), 0);
-            const restored = normalizeDatabase({
-              ...parsed, version: Number(parsed.version) || 1,
-              nextComponentSku: Math.max(Number(parsed.nextComponentSku) || 1, componentMax + 1),
-              nextProductSku: Math.max(Number(parsed.nextProductSku) || 1, productMax + 1),
-            });
-            setThemeColors(restored.themeName, restored.customTheme);
-            setStorageLoadError("");
-            setStorageRecoveryRaw(null);
-            setReady(true);
-            setDb(restored);
-            setBackupOpen(false);
-            Alert.alert("Backup restored", "The tracker was restored. Your previous saved data is in the local recovery copy.");
-          } catch (_error) {
-            Alert.alert("Could not restore backup", "The recovery copy could not be saved, so the current tracker was left unchanged.");
-          }
-        } },
-      ]);
+      setBackupPreview({ parsed, summary });
+      setBackupFeedback({ type: "success", text: "Backup checked. Review its contents below, then choose Restore backup. Your current tracker will be saved first." });
     } catch (_error) {
-      Alert.alert("Backup text is not valid JSON", "Check that the full backup was pasted into the box.");
+      setBackupFeedback({ type: "error", text: "The pasted text is not complete backup JSON. Copy the entire backup text again, then paste it here." });
+    }
+  };
+
+  const restoreCheckedBackup = async () => {
+    if (!backupPreview || backupRestoring || backupRestoreComplete) return;
+    setBackupRestoring(true);
+    setBackupFeedback({ type: "info", text: "Saving a recovery copy of your current tracker before restoring…" });
+    try {
+      if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+      saveTimerRef.current = null;
+      saveRevisionRef.current += 1;
+      await saveQueueRef.current.catch(() => {});
+
+      // Capture the latest in-memory tracker, not the older raw snapshot from page load.
+      const currentSnapshot = JSON.stringify(db);
+      const parsed = backupPreview.parsed;
+      const componentMax = (parsed.components || []).reduce((max, item) => Math.max(max, Number(String(item.sku || "").match(/(\d+)$/)?.[1]) || 0), 0);
+      const productMax = (parsed.products || []).reduce((max, item) => Math.max(max, Number(String(item.sku || "").match(/(\d+)$/)?.[1]) || 0), 0);
+      const restored = normalizeDatabase({
+        ...parsed, version: Number(parsed.version) || 1,
+        nextComponentSku: Math.max(Number(parsed.nextComponentSku) || 1, componentMax + 1),
+        nextProductSku: Math.max(Number(parsed.nextProductSku) || 1, productMax + 1),
+      });
+      const restoredSnapshot = JSON.stringify(restored);
+
+      await AsyncStorage.setItem(STORAGE_KEY + ".recovery", currentSnapshot);
+      await AsyncStorage.setItem(STORAGE_KEY, restoredSnapshot);
+      lastPersistedSnapshotRef.current = restoredSnapshot;
+      lastRecoveryCheckpointAtRef.current = Date.now();
+      setThemeColors(restored.themeName, restored.customTheme);
+      setStorageLoadError("");
+      setStorageLoadNotice("Your backup was restored. The tracker that was on this device is saved in its recovery copy.");
+      setStorageRecoveryRaw(null);
+      setSaveError("");
+      setSaving(false);
+      setLastSavedAt(new Date());
+      setReady(true);
+      setDb(restored);
+      setBackupRestoreComplete(true);
+      setBackupFeedback({ type: "success", text: "Backup restored and saved successfully. Your previous tracker is stored in the recovery copy on this device. Choose Done to close." });
+      setBackupOpen(true);
+    } catch (_error) {
+      setBackupFeedback({ type: "error", text: "Restore did not finish. Your current tracker was left in place. Check that browser storage is available, then try again." });
+    } finally {
+      setBackupRestoring(false);
     }
   };
 
@@ -5358,7 +5397,10 @@ export default function App() {
         <Text style={styles.bodyText}>You do not need to paste backup text to load normal saved data. The optional backup box below is only for a separate backup file you already have.</Text>
         <View style={styles.actionRow}><Action label="Retry automatic recovery" onPress={retryStorageLoad} /><Action label="Open on-device recovery copy" quiet onPress={restoreLocalRecovery} /><Action label="Start fresh and keep saved file" quiet onPress={continueWithNewTracker} /></View>
       </Card>
-      <Card><Text style={styles.cardTitle}>Optional: restore a backup you already have</Text><Text style={styles.bodyText}>You do not need a backup to open normally saved data. Only use this if automatic recovery cannot open the local copies.</Text><TextInput value={backupText} onChangeText={setBackupText} multiline autoCapitalize="none" style={styles.backupInput} placeholder="Paste an existing GRIMMS backup (optional)" placeholderTextColor={COLORS.placeholder} /><View style={styles.actionRow}><Action label="Restore this backup" onPress={importBackup} /></View></Card>
+      <Card><Text style={styles.cardTitle}>Optional: restore a backup you already have</Text><Text style={styles.bodyText}>You do not need a backup to open normally saved data. Only use this if automatic recovery cannot open the local copies.</Text><TextInput value={backupText} onChangeText={(value) => { setBackupText(value); setBackupPreview(null); setBackupFeedback(null); setBackupRestoreComplete(false); }} multiline autoCapitalize="none" style={styles.backupInput} placeholder="Paste an existing GRIMMS backup (optional)" placeholderTextColor={COLORS.placeholder} />
+        {backupFeedback ? <View style={[styles.backupFeedback, backupFeedback.type === "error" && styles.backupFeedbackError, backupFeedback.type === "success" && styles.backupFeedbackSuccess, backupFeedback.type === "info" && styles.backupFeedbackInfo]}><Text accessibilityLiveRegion="polite" style={styles.backupFeedbackText}>{backupFeedback.text}</Text></View> : null}
+        {backupPreview ? <View style={styles.backupReview}><Text style={styles.fieldLabel}>Backup contents</Text><Text style={styles.bodyText}>{backupPreview.summary}</Text><Text style={styles.fieldHint}>Your current in-memory tracker will be saved as a recovery copy before this backup is restored.</Text></View> : null}
+        <View style={styles.actionRow}><Action label={backupRestoring ? "Restoring…" : backupRestoreComplete ? "Done" : backupPreview ? "Restore backup" : "Check backup"} onPress={backupRestoring ? () => {} : backupRestoreComplete ? () => { setStorageLoadError(""); setBackupOpen(true); } : backupPreview ? restoreCheckedBackup : checkBackupText} /></View></Card>
     </ScrollView></SafeAreaView></ButtonSoundContext.Provider>;
   }
 
@@ -5509,14 +5551,18 @@ export default function App() {
       </Modal>
       <Modal visible={backupOpen} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setBackupOpen(false)}>
         <SafeAreaView style={styles.modalSafe}>
-          <View style={styles.modalHeader}><Pressable onPress={() => setBackupOpen(false)}><Text style={styles.modalCancel}>Close</Text></Pressable><Text style={styles.modalTitle}>{backupMode === "export" ? "Copy backup text" : "Restore backup"}</Text>{backupMode === "export" ? <Pressable onPress={copyBackup}><Text style={styles.modalSave}>Copy text</Text></Pressable> : <Pressable onPress={importBackup}><Text style={styles.modalSave}>Restore</Text></Pressable>}</View>
+          <View style={styles.modalHeader}><Pressable onPress={() => setBackupOpen(false)}><Text style={styles.modalCancel}>Close</Text></Pressable><Text style={styles.modalTitle}>{backupMode === "export" ? "Copy backup text" : "Restore backup"}</Text>{backupMode === "export" ? <Pressable onPress={copyBackup}><Text style={styles.modalSave}>Copy text</Text></Pressable> : <View style={styles.modalHeaderSpacer} />}</View>
           <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === "ios" ? "padding" : "height"}>
           <ScrollView contentContainerStyle={styles.backupContent} keyboardShouldPersistTaps="handled">
             <Text style={styles.cardTitle}>{backupMode === "export" ? "Your tracker backup" : "Paste a GRIMMS backup"}</Text>
-            <Text style={styles.bodyText}>{backupMode === "export" ? "Choose Copy text, then keep the copied text somewhere private. To restore later, open Restore backup and paste the complete text. This is a copyable backup; nothing downloads to your computer." : "Paste the complete backup text below. The app checks its structure and saves your current tracker as a recovery copy before restoring."}</Text>
-            <TextInput value={backupText} onChangeText={setBackupText} multiline autoCapitalize="none" autoCorrect={false} style={styles.backupInput} placeholder="Paste backup JSON here" placeholderTextColor={COLORS.placeholder} />
-            {backupMode === "export" ? <View style={styles.actionRow}><Action label="Copy backup text" onPress={copyBackup} /><Action label="Select the text to copy manually" quiet onPress={() => Alert.alert("Copy manually", "Click inside the backup box, select all text, and copy it. Keep that text somewhere private.")} /></View> : <Text style={styles.fieldHint}>After you choose Restore, review the record counts and confirm before replacing the current tracker.</Text>}
+            <Text style={styles.bodyText}>{backupMode === "export" ? "Choose Copy text, then keep the copied text somewhere private. To restore later, open Restore backup and paste the complete text. This is a copyable backup; nothing downloads to your computer." : "Paste the complete backup text below, then choose Check backup. You will see what is inside before confirming. Your current tracker is saved as a recovery copy first."}</Text>
+            <TextInput value={backupText} onChangeText={(value) => { setBackupText(value); setBackupPreview(null); setBackupFeedback(null); setBackupRestoreComplete(false); }} multiline autoCapitalize="none" autoCorrect={false} style={styles.backupInput} placeholder="Paste backup JSON here" placeholderTextColor={COLORS.placeholder} />
+            {backupMode === "export" ? <View style={styles.actionRow}><Action label="Copy backup text" onPress={copyBackup} /><Action label="Select the text to copy manually" quiet onPress={() => Alert.alert("Copy manually", "Click inside the backup box, select all text, and copy it. Keep that text somewhere private.")} /></View> : <>
+              {backupFeedback ? <View style={[styles.backupFeedback, backupFeedback.type === "error" && styles.backupFeedbackError, backupFeedback.type === "success" && styles.backupFeedbackSuccess, backupFeedback.type === "info" && styles.backupFeedbackInfo]}><Text accessibilityLiveRegion="polite" style={styles.backupFeedbackText}>{backupFeedback.text}</Text></View> : null}
+              {backupPreview ? <View style={styles.backupReview}><Text style={styles.fieldLabel}>Backup contents</Text><Text style={styles.bodyText}>{backupPreview.summary}</Text><Text style={styles.fieldHint}>Your current tracker will be saved in the recovery copy before this backup replaces it.</Text></View> : null}
+            </>}
           </ScrollView>
+          {backupMode === "restore" ? <View style={styles.backupFooter}><Pressable accessibilityRole="button" accessibilityLabel={backupRestoring ? "Restoring backup" : backupRestoreComplete ? "Done" : backupPreview ? "Restore backup" : "Check backup"} accessibilityState={{ disabled: backupRestoring || (!backupText.trim() && !backupRestoreComplete) }} disabled={backupRestoring || (!backupText.trim() && !backupRestoreComplete)} style={[styles.primaryButtonFull, styles.backupPrimaryButton, (backupRestoring || (!backupText.trim() && !backupRestoreComplete)) && styles.disabledButton]} onPress={() => { if (backupRestoreComplete) setBackupOpen(false); else if (backupPreview) restoreCheckedBackup(); else checkBackupText(); }}><Text style={styles.primaryButtonFullText}>{backupRestoring ? "Restoring…" : backupRestoreComplete ? "Done" : backupPreview ? "Restore backup" : "Check backup"}</Text></Pressable></View> : null}
           </KeyboardAvoidingView>
         </SafeAreaView>
       </Modal>
@@ -5993,7 +6039,15 @@ function makeStyles() { return StyleSheet.create({
   tutorialDotSelected: { width: 20, backgroundColor: COLORS.wine },
   outlineButton: { backgroundColor: COLORS.rose, borderRadius: 11, borderWidth: 1, borderColor: COLORS.wine, padding: 11, marginTop: 13, alignItems: "center" },
   outlineButtonText: { color: COLORS.wine, fontSize: 12, fontWeight: "700" },
-  backupContent: { padding: 18, paddingBottom: 38 },
+  backupContent: { padding: 18, paddingBottom: 24 },
+  backupFooter: { flexShrink: 0, paddingHorizontal: 16, paddingTop: 10, paddingBottom: 10, borderTopWidth: 1, borderTopColor: COLORS.line, backgroundColor: COLORS.card, zIndex: 5, elevation: 4 },
+  backupPrimaryButton: { minHeight: 50, justifyContent: "center", marginTop: 0, zIndex: 6, elevation: 2 },
+  backupFeedback: { borderWidth: 1, borderColor: COLORS.line, borderRadius: 11, backgroundColor: COLORS.soft, padding: 11, marginTop: 11 },
+  backupFeedbackError: { borderColor: COLORS.red, backgroundColor: COLORS.rose },
+  backupFeedbackSuccess: { borderColor: COLORS.green, backgroundColor: COLORS.soft },
+  backupFeedbackInfo: { borderColor: COLORS.wine, backgroundColor: COLORS.soft },
+  backupFeedbackText: { color: COLORS.ink, fontSize: 12, lineHeight: 17, fontWeight: "600" },
+  backupReview: { borderWidth: 1, borderColor: COLORS.line, borderRadius: 11, backgroundColor: COLORS.card, padding: 12, marginTop: 11 },
   backupInput: { minHeight: 300, maxHeight: 480, backgroundColor: COLORS.card, borderColor: COLORS.line, borderWidth: 1, borderRadius: 12, marginTop: 12, padding: 12, textAlignVertical: "top", color: COLORS.ink, fontSize: 10, fontFamily: Platform.OS === "ios" ? "Menlo" : "monospace" },
   chooserBackdrop: { flex: 1, backgroundColor: "rgba(38,32,31,0.42)", justifyContent: "flex-end" },
   chooserCard: { backgroundColor: COLORS.paper, borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 18, paddingBottom: 30 },
