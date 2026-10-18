@@ -15,7 +15,7 @@ import {
   StyleSheet,
   Text,
   TextInput,
-  Vibration,
+  useWindowDimensions,
   View,
 } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
@@ -265,7 +265,7 @@ const EMPTY_DB = {
   businessName: "",
   businessStartDate: "",
   onboardingCompleted: false,
-  buttonSoundsEnabled: true,
+  buttonSoundsEnabled: false,
   tutorialCompleted: false,
   components: [],
   products: [],
@@ -327,29 +327,37 @@ const DEFAULT_DROPDOWN_OPTIONS = {
 };
 
 const NAV_ITEMS = [
-  { id: "Dashboard", label: "Dashboard", icon: "⌂" },
-  { id: "Components", label: "Components", icon: "◈" },
-  { id: "Products", label: "Products", icon: "◇" },
-  { id: "Listings", label: "Listings", icon: "▤" },
-  { id: "Orders", label: "Orders", icon: "▣" },
-  { id: "Settings", label: "Settings", icon: "⚙" },
+  { id: "Dashboard", label: "Dashboard", icon: "DB" },
+  { id: "Components", label: "Components", icon: "CM" },
+  { id: "Products", label: "Products", icon: "PD" },
+  { id: "Listings", label: "Listings", icon: "LS" },
+  { id: "Orders", label: "Orders", icon: "OR" },
+  { id: "Settings", label: "Settings", icon: "ST" },
 ];
 
 const MORE_ITEMS = [
-  ["Dashboard", "⌂", "Daily overview and priorities"],
-  ["Components", "◈", "Materials, stock, and restocks"],
-  ["Products", "◇", "Product designs, prices, and inventory"],
-  ["Listings", "▤", "Manage marketplace pages"],
-  ["Listing Analytics", "▥", "Record listing stats and review performance over time"],
-  ["Orders", "▣", "Track sales and fulfillment"],
-  ["Production", "✦", "Make products and record material usage"],
-  ["Reviews", "★", "Save buyer comments and shop ratings"],
-  ["Finances", "$", "Sales, costs, and expenses"],
-  ["Calendar", "▦", "Tasks, events, shifts, and business dates"],
-  ["Ideas", "✧", "Product ideas and work stages"],
-  ["Audit", "⌕", "Review saved changes and inventory history"],
-  ["Suppliers", "♧", "Supplier details and notes"],
-  ["Settings", "⚙", "Business profile and data tools"],
+  ["Dashboard", "DB", "Daily overview and priorities"],
+  ["Components", "CM", "Materials, stock, and restocks"],
+  ["Products", "PD", "Product designs, prices, and inventory"],
+  ["Listings", "LS", "Manage marketplace pages"],
+  ["Listing Analytics", "AN", "Record listing stats and review performance over time"],
+  ["Orders", "OR", "Track sales and fulfillment"],
+  ["Production", "PR", "Make products and record material usage"],
+  ["Reviews", "RV", "Save buyer comments and shop ratings"],
+  ["Finances", "FN", "Sales, costs, and expenses"],
+  ["Calendar", "CL", "Tasks, events, shifts, and business dates"],
+  ["Ideas", "ID", "Product ideas and work stages"],
+  ["Audit", "AU", "Review saved changes and inventory history"],
+  ["Suppliers", "SP", "Supplier details and notes"],
+  ["Help & FAQ", "HQ", "Instructions, common questions, and data help"],
+  ["Settings", "ST", "Business profile and data tools"],
+];
+
+const SIDEBAR_GROUPS = [
+  { label: "WORKSPACE", pages: ["Dashboard", "Components", "Products"] },
+  { label: "SALES", pages: ["Listings", "Listing Analytics", "Orders", "Reviews"] },
+  { label: "OPERATIONS", pages: ["Production", "Finances", "Calendar", "Ideas", "Audit", "Suppliers"] },
+  { label: "SUPPORT", pages: ["Help & FAQ", "Settings"] },
 ];
 
 const localDateKey = (date) => {
@@ -573,7 +581,7 @@ const normalizeDatabase = (saved) => {
     : [];
   const sortModes = source.sortModes && typeof source.sortModes === "object" ? source.sortModes : {};
   return {
-    ...withCurrentSkuCounters({ ...EMPTY_DB, ...source, version: Math.max(savedVersion, EMPTY_DB.version), businessStartDate: parseDateInput(source.businessStartDate) || "", onboardingCompleted: typeof incoming.onboardingCompleted === "boolean" ? incoming.onboardingCompleted : savedVersion < 7, buttonSoundsEnabled: typeof incoming.buttonSoundsEnabled === "boolean" ? incoming.buttonSoundsEnabled : true, themeName, dateFormat, customTheme, marketplaceFeeRules, dashboardWidgetOrder, hiddenDashboardWidgets, sortModes, listings, dropdownOptions, timeSessions, timerSessions, activeShift, activeTimer, orders }),
+    ...withCurrentSkuCounters({ ...EMPTY_DB, ...source, version: Math.max(savedVersion, EMPTY_DB.version), businessStartDate: parseDateInput(source.businessStartDate) || "", onboardingCompleted: typeof incoming.onboardingCompleted === "boolean" ? incoming.onboardingCompleted : savedVersion < 7, buttonSoundsEnabled: typeof incoming.buttonSoundsEnabled === "boolean" ? incoming.buttonSoundsEnabled : false, themeName, dateFormat, customTheme, marketplaceFeeRules, dashboardWidgetOrder, hiddenDashboardWidgets, sortModes, listings, dropdownOptions, timeSessions, timerSessions, activeShift, activeTimer, orders }),
     products: source.products.map((product) => ({ ...product, recipe: Array.isArray(product.recipe) ? product.recipe.filter((part) => part && typeof part === "object" && !Array.isArray(part)) : [] })),
     events: source.events.map((event) => ({ ...event, done: !!event.done })),
     workPlans: source.workPlans.map((plan) => ({ ...plan, done: !!plan.done })),
@@ -1617,6 +1625,7 @@ function RecordModal({ visible, type, record, db, prefill, onClose, onSave, onMa
     workPlan: "Planned work block",
   };
   const optionsFor = (key) => (db.dropdownOptions && db.dropdownOptions[key] || DEFAULT_DROPDOWN_OPTIONS[key] || []).map((value) => ({ label: value, value }));
+  const supplierOptions = (db.suppliers || []).filter(active).map((item) => ({ label: item.name, value: item.name }));
   const currentOrderProductId = type === "order" && record && record.items && record.items[0] ? record.items[0].productId : "";
   const productOptions = (db.products || []).filter((p) => active(p) || p.id === currentOrderProductId).map((p) => ({ label: p.name + " (" + p.sku + ")" + (p.archived ? " · archived" : ""), value: p.id }));
   const orderOptions = (db.orders || []).map((order) => ({ label: [order.orderSku, (order.items || []).map((item) => [item.productName, item.productSku, item.listingName, item.listingSku].filter(Boolean).join(" ").trim()).join(", "), order.customer, dateLabel(order.date)].filter(Boolean).join(" · "), value: order.id }));
@@ -1629,7 +1638,7 @@ function RecordModal({ visible, type, record, db, prefill, onClose, onSave, onMa
       { key: "unit", label: "Unit", optionSet: "componentUnits", options: optionsFor("componentUnits") },
       { key: "lowStock", label: "Low-stock alert at", number: true, placeholder: String(db.defaultLowStock == null ? 3 : db.defaultLowStock) },
       { key: "cost", label: "Cost per unit", number: true, placeholder: "0.00" },
-      { key: "supplier", label: "Supplier", placeholder: "Supplier name (optional)" },
+      { key: "supplier", label: "Supplier", optionSet: "suppliers", options: supplierOptions, searchable: true, allowBlank: true, placeholder: "Choose or add a supplier" },
       { key: "notes", label: "Notes", multiline: true, placeholder: "Storage location, color, size..." },
     ],
     restock: [
@@ -1637,8 +1646,8 @@ function RecordModal({ visible, type, record, db, prefill, onClose, onSave, onMa
       { key: "quantity", label: "Quantity purchased", number: true, required: true, placeholder: "0" },
       { key: "purchaseCost", label: "Total material cost (optional)", number: true, placeholder: "Leave blank if unknown", hint: "If blank, new units keep the component’s current average cost instead of reducing it to zero." },
       { key: "shippingCost", label: "Shipping cost (optional)", number: true, placeholder: "Leave blank if unknown" },
-      { key: "supplier", label: "Supplier", placeholder: "Supplier name (optional)" },
-      { key: "date", label: "Purchase date", date: true },
+      { key: "supplier", label: "Supplier", optionSet: "suppliers", options: supplierOptions, searchable: true, allowBlank: true, placeholder: "Choose or add a supplier" },
+      { key: "date", label: "Purchase date", date: true, hint: "Choose the actual date you bought these supplies; past dates are supported." },
       { key: "notes", label: "Notes", multiline: true, placeholder: "Receipt details or purchase reference" },
     ],
     product: [
@@ -1885,9 +1894,25 @@ const HELP_COPY = {
   Production: ["Production turns a saved product recipe into an inventory transaction. Choose a product and enter a positive quantity; decimals are supported for items tracked by weight or volume. The app multiplies every recipe amount by that number, subtracts those component quantities, and adds the finished quantity to product inventory. Check the recipe units and available component stock first; this tracker does not place purchase orders for shortages.", "Example: one candle recipe uses 200 g wax and one wick. Recording 3 candles subtracts 600 g wax and 3 wicks, then adds 3 candles to finished inventory."],
   Reports: ["Reports summarize only the sales, inventory, fees, expenses, and other activity entered in this tracker. They are not connected to your shops, bank, tax service, or accounting software. Compare figures with source statements and correct missing or duplicated records before relying on a total. Profit uses saved product recipe costs and entered expenses; it does not estimate labor or taxes.", "Example: if the report says 12 orders and your marketplace statement says 13, find the missing sale in Orders before using the total in your monthly review."],
   Suppliers: ["Use this directory for the supplier or shop name, contact method, website, category, and your purchasing notes. Reuse the same supplier name on component and restock records so you can recognize the relationship. Notes can hold useful buying details such as minimum order, package size, or typical delivery time; this is not a purchase-order system.", "Example: add ‘Northside Bead Co.’ with its order email and website, then note ‘Minimum order $25; brass chain usually ships in 3–5 days.’ Use that same name when recording a clasp restock."],
-  Settings: ["Business profile stores the shop name, display currency, and defaults. Theme and colors affect appearance; marketplace options control the channel choices in listings and orders. Fee rules are estimates: the percent applies to the item subtotal and the fixed amount is added once per order. Data and backups lets you export, restore, clear business records, or perform a full factory reset. This version stores records locally on this device and does not provide accounts or cloud sync.", "Example: for an illustrative 6.5% fee plus $0.30 per order on a $40 sale, the estimate is $2.90 ($2.60 + $0.30), before any extra fee. These are sample numbers only, not a marketplace’s actual rates. Check the channel’s current fee schedule and enter its real rules."],
-  More: ["More is the directory for the business pages that do not fit in the main bottom navigation. Open a tile to reach that tool; use the Dashboard or bottom tabs to return to the pages you visit most. The page descriptions tell you what records each tool uses.", "Example: open Suppliers to save a supplier’s email, or choose Settings to change your profile, fee estimates, sounds, backup, or reset options."],
+  Settings: ["Business profile stores the shop name, display currency, and defaults. Theme and colors affect appearance; marketplace options control the channel choices in listings and orders. Fee rules are estimates: the percent applies to the item subtotal and the fixed amount is added once per order. Data and backups lets you copy backup text, restore it, clear business records, or perform a full factory reset. Records stay in this browser on this device; there is no login or cloud sync yet.", "Example: for an illustrative 6.5% fee plus $0.30 per order on a $40 sale, the estimate is $2.90 ($2.60 + $0.30), before any extra fee. These are sample numbers only, not a marketplace’s actual rates. Check the channel’s current fee schedule and enter its real rules."],
+  "Help & FAQ": ["Search the guide for setup steps, supplier choices, purchase dates, backup and restore instructions, and answers about how tracker data is stored. Use the page links to jump straight to a feature.", "Example: search for ‘purchase date’ to learn how to enter the date on a restock, or search for ‘backup’ to copy a text backup and restore it later."],
+  More: ["All pages lists every part of the business tracker. On a wide screen, the organized side panel keeps these pages visible; on a smaller screen, open Pages in the header. The page descriptions tell you what records each tool uses.", "Example: open Suppliers to save a supplier’s email, or choose Settings to change your profile, fee estimates, backups, and reset options."],
 };
+
+const FAQ_ITEMS = [
+  { question: "Where is my information saved?", answer: "The tracker saves automatically in this browser on this device. It does not currently create an online account or sync records between browsers. A private window, browser reset, or different device may not have the same records.", tags: "data storage device browser account login sync" },
+  { question: "How do I make a backup I can paste later?", answer: "Open Settings → Data and backups → Export backup. The app shows your backup as text. Choose Copy backup text and keep the copied text somewhere private that you can find again. You can also select and copy all the text in the box.", tags: "backup export copy text save paste" },
+  { question: "How do I restore a text backup?", answer: "Open Settings → Data and backups → Restore backup, paste the complete backup text, and choose Restore. Review the confirmation first. The app saves a local recovery copy of the current tracker before replacing it.", tags: "restore import paste backup recovery" },
+  { question: "Can I sign in and see the same data on another computer?", answer: "Not yet. A real sign-in needs a secure account and database service; GitHub Pages only hosts the website. Until cloud sync is connected, use the copyable backup text to move a copy between devices. Never put passwords or private records in the public code repository.", tags: "login sign in cloud sync another device account" },
+  { question: "How do I add or change a supplier?", answer: "Open Components and add or edit a component or restock. Open its Supplier dropdown to choose a saved supplier, edit a supplier name, add one, or remove it from the choices. You can also manage contact details and notes on the Suppliers page.", tags: "supplier dropdown add edit delete components" },
+  { question: "Can I enter the original date I bought supplies?", answer: "Yes. From Components, choose Restock and use Purchase date to select the actual date of that purchase. It can be an earlier date; it does not have to be today. The purchase history keeps that date.", tags: "purchase date restock bought earlier date" },
+  { question: "Why did component inventory change after a sale?", answer: "Saving a restock increases component stock. Recording production uses the component quantities in the product recipe and increases finished product inventory. Recording a sale decreases finished product inventory. Review the Audit page and record details to see the history.", tags: "inventory stock materials production sale audit" },
+  { question: "Does the tracker import orders or change my shop listings?", answer: "No. Enter sales and marketplace statistics manually. The tracker does not connect to Etsy, Shopify, or other stores, take payment, publish listings, buy shipping labels, or change prices on those sites.", tags: "orders marketplace imports payment etsy shopify listings" },
+  { question: "Are profit and fee numbers exact?", answer: "They are estimates based on the records and fee rules you enter. They may not include labor, taxes, missing costs, or a marketplace's latest fees. Compare them with your statements and receipts.", tags: "profit fees finance taxes estimates" },
+  { question: "What should I do before clearing or resetting the tracker?", answer: "Export and keep a text backup first. Clear business records keeps app preferences and makes a recovery copy. Factory reset removes local records and recovery copies from this browser, so only use it when you intend to start over.", tags: "clear reset delete recovery backup" },
+  { question: "Why can’t I see the same data after switching browsers?", answer: "Each browser has its own local storage. The site address, browser profile, and device you used before matter. Open the old browser and export a backup, then paste it into Restore backup on the new one.", tags: "missing records browser profile computer local" },
+  { question: "How do I find a page?", answer: "On a computer, use the organized side panel. On a smaller screen, choose Pages in the top bar. Help & FAQ is in the Support group, and the search field at the top of the page can find records within most sections.", tags: "navigation pages search help" },
+];
 
 function HelpModal({ visible, screen, onClose }) {
   const [instructions, example] = HELP_COPY[screen] || HELP_COPY.More;
@@ -2134,6 +2159,8 @@ function ScreenDashboardHeader({ title, description, metrics = [], actions = [] 
 }
 
 export default function App() {
+  const { width: viewportWidth } = useWindowDimensions();
+  const wideLayout = Platform.OS === "web" && viewportWidth >= 1040;
   useEffect(() => {
     if (Platform.OS !== "web" || typeof document === "undefined") return undefined;
     const layoutStyle = document.createElement("style");
@@ -2151,6 +2178,10 @@ export default function App() {
   const [formPrefill, setFormPrefill] = useState(null);
   const [detailSelection, setDetailSelection] = useState(null);
   const [helpOpen, setHelpOpen] = useState(false);
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
+  const [helpSearch, setHelpSearch] = useState("");
+  const [helpExpandedFaq, setHelpExpandedFaq] = useState(0);
+  const [helpExpandedGuide, setHelpExpandedGuide] = useState("");
   const [expandedOrderIds, setExpandedOrderIds] = useState([]);
   const [expandedComponentIds, setExpandedComponentIds] = useState([]);
   const [expandedProductIds, setExpandedProductIds] = useState([]);
@@ -2196,6 +2227,7 @@ export default function App() {
   const [productionProduct, setProductionProduct] = useState("");
   const [productionQty, setProductionQty] = useState("1");
   const [backupText, setBackupText] = useState("");
+  const [backupMode, setBackupMode] = useState("restore");
   const [customColorPicker, setCustomColorPicker] = useState("");
   const [customThemeSections, setCustomThemeSections] = useState({ surfaces: true, typography: false, accents: false, borders: false });
   const [themePickerOpen, setThemePickerOpen] = useState(false);
@@ -2282,35 +2314,8 @@ export default function App() {
   const lastPersistedSnapshotRef = useRef(null);
   const lastRecoveryCheckpointAtRef = useRef(0);
   const skipInitialSaveRef = useRef(false);
-  const buttonAudioContextRef = useRef(null);
   CURRENT_DATE_FORMAT = db.dateFormat || DEFAULT_DATE_FORMAT;
-  const playButtonSound = useCallback(() => {
-    if (!db.buttonSoundsEnabled) return;
-    try {
-      if (Platform.OS === "web") {
-        const AudioContextConstructor = globalThis.AudioContext || globalThis.webkitAudioContext;
-        if (!AudioContextConstructor) return;
-        if (!buttonAudioContextRef.current) buttonAudioContextRef.current = new AudioContextConstructor();
-        const audioContext = buttonAudioContextRef.current;
-        const resumeResult = audioContext.resume?.();
-        if (resumeResult && typeof resumeResult.catch === "function") resumeResult.catch(() => {});
-        const oscillator = audioContext.createOscillator();
-        const gain = audioContext.createGain();
-        const startAt = audioContext.currentTime;
-        oscillator.type = "sine";
-        oscillator.frequency.setValueAtTime(880, startAt);
-        gain.gain.setValueAtTime(0.0001, startAt);
-        gain.gain.exponentialRampToValueAtTime(0.025, startAt + 0.006);
-        gain.gain.exponentialRampToValueAtTime(0.0001, startAt + 0.055);
-        oscillator.connect(gain);
-        gain.connect(audioContext.destination);
-        oscillator.start(startAt);
-        oscillator.stop(startAt + 0.06);
-      } else if (Platform.OS === "android") {
-        Vibration.vibrate(8);
-      }
-    } catch (_error) { /* feedback is optional; button actions must still work */ }
-  }, [db.buttonSoundsEnabled]);
+  const playButtonSound = useCallback(() => {}, []);
 
   useEffect(() => {
     let previousDay = TODAY;
@@ -3339,6 +3344,41 @@ export default function App() {
   };
 
   const manageDropdownFromField = (action, key, index, selectedValue, onChange, draft, originalValue) => {
+    if (key === "suppliers") {
+      const suppliers = (db.suppliers || []).filter(active);
+      const supplier = index == null ? null : suppliers[index];
+      if (action === "save") {
+        const value = String(draft || "").trim();
+        if (!value) { Alert.alert("Add a supplier name", "Supplier names cannot be blank."); return false; }
+        if (suppliers.some((item, itemIndex) => item.name.toLowerCase() === value.toLowerCase() && itemIndex !== index)) {
+          Alert.alert("That supplier already exists", "Choose a different name or edit the existing supplier."); return false;
+        }
+        const oldName = supplier ? supplier.name : "";
+        setData((old) => ({
+          ...old,
+          suppliers: supplier
+            ? old.suppliers.map((item) => item.id === supplier.id ? { ...item, name: value, updatedAt: new Date().toISOString() } : item)
+            : [{ id: uid("supplier"), name: value, category: "Other", contact: "", website: "", notes: "", archived: false, createdAt: new Date().toISOString() }, ...old.suppliers],
+          ...(supplier && oldName !== value ? {
+            components: old.components.map((item) => item.supplier === oldName ? { ...item, supplier: value } : item),
+            purchases: (old.purchases || []).map((item) => item.supplier === oldName ? { ...item, supplier: value } : item),
+          } : {}),
+        }));
+        if (onChange && (index == null || selectedValue === oldName)) onChange(value);
+        return true;
+      }
+      if (action === "delete" && supplier) {
+        Alert.alert("Remove this supplier?", "The supplier will be removed from dropdown choices. Existing component and purchase records keep the supplier name.", [
+          { text: "Cancel", style: "cancel" },
+          { text: "Remove supplier", style: "destructive", onPress: () => {
+            setData((old) => ({ ...old, suppliers: old.suppliers.filter((item) => item.id !== supplier.id) }));
+            if (onChange && selectedValue === supplier.name) onChange("");
+          } },
+        ]);
+        return true;
+      }
+      return false;
+    }
     if (action === "save") return saveDropdownOption(key, index, draft, selectedValue, onChange, originalValue);
     if (action === "delete") {
       return deleteDropdownOption(key, index, selectedValue, onChange);
@@ -3411,28 +3451,31 @@ export default function App() {
   }));
 
   const showBackup = () => {
+    setBackupMode("restore");
     setBackupText("");
     setBackupOpen(true);
   };
 
   const exportBackup = async () => {
+    setBackupMode("export");
+    setBackupText(JSON.stringify(db, null, 2));
+    setBackupOpen(true);
+  };
+
+  const copyBackup = async () => {
     try {
-      if (Platform.OS === "web") {
-        const backup = JSON.stringify(db, null, 2);
-        const file = new Blob([backup], { type: "application/json" });
-        const downloadUrl = URL.createObjectURL(file);
-        const link = document.createElement("a");
-        link.href = downloadUrl;
-        link.download = `grimms-business-tracker-backup-${localDateKey(new Date())}.json`;
-        document.body.appendChild(link);
-        link.click();
-        link.remove();
-        window.setTimeout(() => URL.revokeObjectURL(downloadUrl), 1000);
+      if (Platform.OS === "web" && navigator.clipboard && navigator.clipboard.writeText) {
+        await navigator.clipboard.writeText(backupText);
+        Alert.alert("Backup copied", "Your backup text is copied. Keep it somewhere private so you can paste it back later.");
         return;
       }
-      await Share.share({ title: "GRIMMS business tracker backup", message: JSON.stringify(db, null, 2) });
+      if (Platform.OS !== "web") {
+        await Share.share({ title: "GRIMMS business tracker backup", message: backupText });
+        return;
+      }
+      Alert.alert("Copy the backup text", "Click inside the backup box, select all text, then copy it. Keep the text somewhere private.");
     } catch (_error) {
-      Alert.alert("Backup could not be shared", "Try again, or use Restore backup to copy your tracker data manually.");
+      Alert.alert("Could not copy automatically", "Click inside the backup box, select all text, then copy it. Keep the text somewhere private.");
     }
   };
 
@@ -4936,8 +4979,6 @@ export default function App() {
         <Field field={{ key: "currency", label: "Currency", options: ["USD", "CAD", "GBP", "EUR", "AUD", "NZD", "MXN", "JPY", "INR"].map((x) => ({ label: x, value: x })) }} value={db.currency} onChange={(value) => saveSettings("currency", value)} />
         <Field field={{ key: "dateFormat", label: "Date format", options: DATE_FORMAT_OPTIONS.map((format) => ({ label: format, value: format })) }} value={db.dateFormat || DEFAULT_DATE_FORMAT} onChange={(value) => saveSettings("dateFormat", value)} />
         <Text style={styles.fieldHint}>Date fields accept several common formats. This preference controls how dates appear across the tracker.</Text>
-        <Field field={{ key: "buttonSoundsEnabled", label: "Button feedback", explanation: FIELD_EXPLANATIONS.buttonSoundsEnabled, options: [{ label: "On", value: "on" }, { label: "Off", value: "off" }] }} value={db.buttonSoundsEnabled ? "on" : "off"} onChange={(value) => saveSettings("buttonSoundsEnabled", value === "on")} />
-        <Text style={styles.fieldHint}>The web preview plays a quiet tone; Android uses a brief vibration. iPhone stays silent with this package-free version. Switch this off to disable button feedback where it is available.</Text>
         <View style={styles.actionRow}><Action label="Take the practical app walkthrough" quiet onPress={() => setTutorialOpen(true)} /></View>
         <Field field={{ label: "Default low-stock level", number: true }} value={String(db.defaultLowStock)} onChange={(value) => saveSettings("defaultLowStock", Math.max(0, asNumber(value, 3)))} />
         <Field field={{ label: "Monthly sales goal (0 disables the goal bar)", number: true, placeholder: "0.00" }} value={String(db.monthlySalesGoal || 0)} onChange={(value) => saveSettings("monthlySalesGoal", Math.max(0, asNumber(value, 0)))} />
@@ -5017,6 +5058,36 @@ export default function App() {
       </SettingsAccordion>
     </>;
   };
+  const renderHelpPage = () => {
+    const query = helpSearch.trim().toLowerCase();
+    const questions = FAQ_ITEMS.filter((item) => !query || (item.question + " " + item.answer + " " + item.tags).toLowerCase().includes(query));
+    const guides = Object.entries(HELP_COPY).filter(([name]) => name !== "Help & FAQ" && name !== "More").filter(([name, copy]) => !query || (name + " " + copy.join(" ")).toLowerCase().includes(query));
+    return <>
+      <View style={styles.helpHero}>
+        <Text style={styles.helpEyebrow}>GUIDE & SUPPORT</Text>
+        <Text style={styles.helpHeroTitle}>Find your way around</Text>
+        <Text style={styles.helpHeroText}>Search instructions and common answers. Your tracker saves in this browser; copyable backups help you move a copy when needed.</Text>
+      </View>
+      <View style={styles.helpSearch}>
+        <Text style={styles.helpSearchLabel}>Search the guide</Text>
+        <TextInput value={helpSearch} onChangeText={(value) => { setHelpSearch(value); setHelpExpandedFaq(-1); setHelpExpandedGuide(""); }} placeholder="Try ‘supplier’, ‘purchase date’, ‘backup’…" placeholderTextColor={COLORS.placeholder} style={styles.input} returnKeyType="search" />
+      </View>
+      <View style={styles.helpLinkWrap}>
+        {[["Components", "Manage supplies"], ["Orders", "Enter a sale"], ["Suppliers", "Supplier directory"], ["Settings", "Profile & backups"]].map(([page, label]) => <Pressable key={page} style={styles.helpLink} onPress={() => navigateRoot(page)}><Text style={styles.helpLinkLabel}>{label}</Text><Text style={styles.helpLinkArrow}>›</Text></Pressable>)}
+      </View>
+      <View style={styles.helpSectionHead}><Text style={styles.sectionTitle}>Questions & answers</Text><Text style={styles.subtle}>{questions.length} topics</Text></View>
+      {questions.length ? questions.map((item, index) => <Pressable key={item.question} onPress={() => setHelpExpandedFaq(helpExpandedFaq === index ? -1 : index)} style={styles.helpQuestion}>
+        <View style={styles.helpQuestionTop}><Text style={styles.helpQuestionText}>{item.question}</Text><Text style={styles.helpQuestionMark}>{helpExpandedFaq === index ? "−" : "+"}</Text></View>
+        {helpExpandedFaq === index ? <Text style={styles.bodyText}>{item.answer}</Text> : null}
+      </Pressable>) : <EmptyState title="No guide results" body="Try a shorter search such as ‘stock’, ‘backup’, or ‘date’." />}
+      <View style={styles.helpSectionHead}><Text style={styles.sectionTitle}>Step-by-step instructions</Text><Text style={styles.subtle}>{guides.length} guides</Text></View>
+      {guides.length ? guides.map(([name, copy]) => <Pressable key={name} onPress={() => setHelpExpandedGuide(helpExpandedGuide === name ? "" : name)} style={styles.helpGuide}>
+        <View style={styles.helpQuestionTop}><View style={styles.flex}><Text style={styles.helpGuideTitle}>{name}</Text><Text style={styles.helpGuideSummary} numberOfLines={helpExpandedGuide === name ? undefined : 2}>{copy[0]}</Text></View><Text style={styles.helpQuestionMark}>{helpExpandedGuide === name ? "−" : "+"}</Text></View>
+        {helpExpandedGuide === name ? <View style={styles.helpExample}><Text style={styles.fieldLabel}>Example</Text><Text style={styles.bodyText}>{copy[1]}</Text></View> : null}
+      </Pressable>) : <Text style={styles.bodyText}>No matching instructions. Clear the search to browse all guides.</Text>}
+    </>;
+  };
+
   const renderMore = () => (
     <>
       <View style={styles.welcomeBoxCompact}><Text style={styles.eyebrow}>BUSINESS TOOLKIT</Text><Text style={styles.welcomeTitle}>All pages</Text><Text style={styles.welcomeText}>Choose any part of your business tracker.</Text></View>
@@ -5050,12 +5121,26 @@ export default function App() {
       case "Calendar": return renderCalendar();
       case "Audit": return renderAudit();
       case "Suppliers": return renderSuppliers();
+      case "Help & FAQ": return renderHelpPage();
       case "Settings": return renderSettings();
       default: return renderMore();
     }
   };
 
   const screenTitle = isFulfillmentPage ? fulfillmentPageTitle : screen === "More" ? "All pages" : screen;
+  const renderNavigationLinks = () => SIDEBAR_GROUPS.map((group) => <View key={group.label} style={styles.sidebarGroup}>
+    <Text style={styles.sidebarGroupTitle}>{group.label}</Text>
+    {group.pages.map((page) => {
+      const item = MORE_ITEMS.find(([name]) => name === page);
+      const icon = item ? item[1] : "--";
+      const selected = screen === page || (isFulfillmentPage && page === "Orders");
+      return <Pressable key={page} accessibilityRole="button" accessibilityLabel={page} onPress={() => { navigateRoot(page); setSearch(""); setMobileNavOpen(false); }} style={[styles.sidebarLink, selected && styles.sidebarLinkSelected]}>
+        <View style={[styles.sidebarIcon, selected && styles.sidebarIconSelected]}><Text style={[styles.sidebarIconText, selected && styles.sidebarIconTextSelected]}>{icon}</Text></View>
+        <Text style={[styles.sidebarLinkText, selected && styles.sidebarLinkTextSelected]}>{page}</Text>
+        {selected ? <View style={styles.sidebarActiveMark} /> : null}
+      </Pressable>;
+    })}
+  </View>);
   const themeMode = db.themeName === CUSTOM_THEME_NAME
     ? ((db.customTheme || DEFAULT_CUSTOM_THEME).mode || "dark")
     : (THEMES.find((theme) => theme.name === db.themeName) || DEFAULT_THEME).mode;
@@ -5080,43 +5165,42 @@ export default function App() {
     <SafeAreaView style={styles.safe}>
       <StatusBar barStyle={themeMode === "dark" ? "light-content" : "dark-content"} backgroundColor={COLORS.paper} />
       <View style={styles.topBar}>
-        <Pressable style={styles.brand} onPress={() => navigateRoot("Dashboard")}><View style={styles.brandMark}><Text style={styles.brandMarkText}>G</Text></View><View><Text style={styles.brandName}>GRIMMS</Text><Text style={styles.brandSub}>BUSINESS TRACKER</Text></View></Pressable>
+        <View style={styles.topBarStart}>
+          {!wideLayout ? <Pressable accessibilityRole="button" accessibilityLabel="Open all pages" style={styles.menuButton} onPress={() => setMobileNavOpen(true)}><View style={styles.menuLines}><View style={styles.menuLine} /><View style={styles.menuLine} /><View style={styles.menuLine} /></View></Pressable> : null}
+          <Pressable style={styles.brand} onPress={() => navigateRoot("Dashboard")}><View style={styles.brandMark}><Text style={styles.brandMarkText}>G</Text></View><View><Text style={styles.brandName}>GRIMMS</Text><Text style={styles.brandSub}>BUSINESS TRACKER</Text></View></Pressable>
+        </View>
         <View style={styles.topActions}><Pressable onPress={saveError ? retrySave : undefined} accessibilityLabel={saveError || (saving ? "Saving tracker data" : lastSavedAt ? "Tracker saved" : "Tracker ready")}><Text style={[styles.saveState, saveError && { color: COLORS.red, fontWeight: "700" }]}>{saveError || (saving ? "Saving…" : lastSavedAt ? `Saved ${lastSavedAt.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}` : "Ready")}</Text></Pressable><Pressable accessibilityLabel="Add a business record" style={styles.addCircle} onPress={() => setAddChooserOpen(true)}><Text style={styles.addCircleText}>＋</Text></Pressable></View>
       </View>
-      {screen !== "More" && screen !== "Dashboard" && screen !== "Settings" && (
-        <View style={styles.searchWrap}><Text style={styles.searchIcon}>⌕</Text><TextInput value={search} onChangeText={setSearch} placeholder={"Search " + (isFulfillmentPage ? "products" : screen.toLowerCase())} placeholderTextColor={COLORS.placeholder} style={styles.searchInput} returnKeyType="search" /><Pressable onPress={() => setSearch("")}><Text style={styles.searchClear}>×</Text></Pressable></View>
+      <View style={[styles.appBody, wideLayout && styles.appBodyWide]}>
+      {wideLayout ? <View style={styles.sidebar}><ScrollView style={styles.sidebarScroll} contentContainerStyle={styles.sidebarContent} showsVerticalScrollIndicator={false}>{renderNavigationLinks()}</ScrollView><View style={styles.sidebarFooter}><Text style={styles.sidebarFooterTitle}>GRIMMS WORKSPACE</Text><Text style={styles.sidebarFooterText}>Keep your records together.</Text></View></View> : null}
+      <View style={styles.contentPane}>
+      {screen !== "More" && screen !== "Dashboard" && screen !== "Settings" && screen !== "Help & FAQ" && (
+        <View style={styles.searchWrap}><View style={styles.searchGlyph}><View style={styles.searchLens} /><View style={styles.searchHandle} /></View><TextInput value={search} onChangeText={setSearch} placeholder={"Search " + (isFulfillmentPage ? "products" : screen.toLowerCase())} placeholderTextColor={COLORS.placeholder} style={styles.searchInput} returnKeyType="search" /><Pressable onPress={() => setSearch("")}><Text style={styles.searchClear}>×</Text></Pressable></View>
       )}
-      <View style={styles.screenHeading}><View style={styles.flex}><Text style={styles.screenTitle}>{screenTitle}</Text>{screen !== "Dashboard" ? <Text style={styles.screenSubtitle}>{isFulfillmentPage ? "Products in this fulfillment status" : screen === "Production" ? "Turn materials into finished inventory" : screen === "Ideas" ? "Save and move product ideas through your work" : screen === "Listing Analytics" ? "Record marketplace stats and follow each listing over time" : "A clear view of your handmade business"}</Text> : <Text style={styles.screenSubtitle}>Your handmade business, in one place</Text>}</View>
+      <View style={styles.screenHeading}><View style={styles.flex}><Text style={styles.screenTitle}>{screenTitle}</Text>{screen !== "Dashboard" ? <Text style={styles.screenSubtitle}>{isFulfillmentPage ? "Products in this fulfillment status" : screen === "Production" ? "Turn materials into finished inventory" : screen === "Ideas" ? "Save and move product ideas through your work" : screen === "Listing Analytics" ? "Record marketplace stats and review performance" : screen === "Help & FAQ" ? "Instructions and answers for your business tools" : "A clear view of your handmade business"}</Text> : <Text style={styles.screenSubtitle}>Your handmade business, in one place</Text>}</View>
         <View style={styles.headerActions}>
           {navigationStack.length > 1 ? <Pressable accessibilityRole="button" accessibilityLabel="Go back" style={styles.headerAdd} onPress={navigateBack}><Text style={styles.headerAddText}>‹ Back</Text></Pressable> : null}
           <Pressable accessibilityLabel={screenTitle + " help"} style={styles.helpButton} onPress={() => setHelpOpen(true)}><Text style={styles.helpButtonText}>?</Text></Pressable>
         </View>
       </View>
       <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === "ios" ? "padding" : "height"}>
-        <ScrollView style={styles.mainScroll} contentContainerStyle={styles.pageContent} keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag">
+        <ScrollView style={styles.mainScroll} contentContainerStyle={[styles.pageContent, wideLayout && styles.pageContentWide]} keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag">
           {storageLoadNotice ? <Pressable onPress={() => setStorageLoadNotice("")} style={styles.infoBanner}><Text style={styles.infoBannerTitle}>Saved data status</Text><Text style={styles.infoBannerText}>{storageLoadNotice} Tap to dismiss.</Text></Pressable> : null}
           {contentForScreen()}
           <View style={styles.bottomNote}><Text style={styles.bottomNoteText}>GRIMMS · Keep your business moving, one step at a time.</Text></View>
         </ScrollView>
       </KeyboardAvoidingView>
-      {!keyboardVisible && <View style={styles.bottomNav}>
-        {NAV_ITEMS.slice(0, 3).map((item) => (
-          <Pressable key={item.id} onPress={() => { navigateRoot(item.id); setSearch(""); }} style={styles.navItem}>
-            <Text style={[styles.navIcon, (screen === item.id || (isFulfillmentPage && item.id === "Orders")) ? styles.navActive : null]}>{item.icon}</Text>
-            <Text style={[styles.navLabel, (screen === item.id || (isFulfillmentPage && item.id === "Orders")) ? styles.navLabelActive : null]}>{item.label || item.id}</Text>
-          </Pressable>
-        ))}
-        <Pressable onPress={() => { navigateRoot("More"); setSearch(""); }} style={styles.navCenterItem} accessibilityRole="button" accessibilityLabel="All pages">
-          <View style={[styles.navCenterButton, screen === "More" && styles.navCenterButtonActive]}><Text style={styles.navCenterIcon}>▦</Text></View>
-          <Text style={[styles.navLabel, screen === "More" && styles.navLabelActive]}>All pages</Text>
-        </Pressable>
-        {NAV_ITEMS.slice(3).map((item) => (
-          <Pressable key={item.id} onPress={() => { navigateRoot(item.id); setSearch(""); }} style={styles.navItem}>
-            <Text style={[styles.navIcon, (screen === item.id || (isFulfillmentPage && item.id === "Orders")) ? styles.navActive : null]}>{item.icon}</Text>
-            <Text style={[styles.navLabel, (screen === item.id || (isFulfillmentPage && item.id === "Orders")) ? styles.navLabelActive : null]}>{item.label || item.id}</Text>
-          </Pressable>
-        ))}
-      </View>}
+      </View>
+      </View>
+      <Modal visible={!wideLayout && mobileNavOpen} animationType="fade" transparent onRequestClose={() => setMobileNavOpen(false)}>
+        <View style={styles.mobileNavOverlay}>
+          <Pressable style={styles.mobileNavScrim} onPress={() => setMobileNavOpen(false)} accessibilityLabel="Close pages menu" />
+          <SafeAreaView style={styles.mobileNavDrawer}>
+            <View style={styles.mobileNavHeader}><View><Text style={styles.mobileNavTitle}>All pages</Text><Text style={styles.mobileNavSubtitle}>Choose a workspace area</Text></View><Pressable accessibilityRole="button" onPress={() => setMobileNavOpen(false)}><Text style={styles.modalCancel}>Close</Text></Pressable></View>
+            <ScrollView contentContainerStyle={styles.sidebarContent}>{renderNavigationLinks()}</ScrollView>
+          </SafeAreaView>
+        </View>
+      </Modal>
       <RecordModal visible={!!modalType} type={modalType} record={editingRecord} db={db} prefill={formPrefill} onClose={closeForm} onSave={saveRecord} onManageOptions={manageDropdownFromField} />
       <ThemeChooserModal visible={themePickerOpen} currentName={db.themeName} customTheme={db.customTheme} onClose={() => setThemePickerOpen(false)} onSelect={(name) => { chooseTheme(name); setThemePickerOpen(false); }} />
       <HelpModal visible={helpOpen} screen={isFulfillmentPage ? "Orders" : screen} onClose={() => setHelpOpen(false)} />
@@ -5167,9 +5251,9 @@ export default function App() {
             <View style={styles.cardTop}><Text style={styles.cardTitle}>What would you like to add?</Text><Pressable onPress={() => setAddChooserOpen(false)}><Text style={styles.modalCancel}>Close</Text></Pressable></View>
             <View style={styles.chooserGrid}>
               {[
-                ["component", "◈", "Component"], ["product", "◇", "Product"], ["listing", "▤", "Listing"],
-                ["order", "▣", "Sale"], ["review", "★", "Buyer review"], ["expense", "$", "Expense"], ["task", "✓", "Task"],
-                ["event", "▦", "Calendar event"], ["workPlan", "◷", "Planned work"], ["idea", "✧", "Product idea"], ["supplier", "♧", "Supplier"], ["restock", "↻", "Restock"],
+                ["component", "CM", "Component"], ["product", "PD", "Product"], ["listing", "LS", "Listing"],
+                ["order", "OR", "Sale"], ["review", "RV", "Buyer review"], ["expense", "FN", "Expense"], ["task", "TK", "Task"],
+                ["event", "CL", "Calendar event"], ["workPlan", "TM", "Planned work"], ["idea", "ID", "Product idea"], ["supplier", "SP", "Supplier"], ["restock", "RS", "Restock"],
               ].map(([type, icon, label]) => (
                 <Pressable key={type} style={styles.chooserOption} onPress={() => { setAddChooserOpen(false); beginAdd(type); }}>
                   <Text style={styles.chooserIcon}>{icon}</Text><Text style={styles.chooserLabel}>{label}</Text>
@@ -5181,13 +5265,13 @@ export default function App() {
       </Modal>
       <Modal visible={backupOpen} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setBackupOpen(false)}>
         <SafeAreaView style={styles.modalSafe}>
-          <View style={styles.modalHeader}><Pressable onPress={() => setBackupOpen(false)}><Text style={styles.modalCancel}>Close</Text></Pressable><Text style={styles.modalTitle}>Backup and restore</Text><Pressable onPress={importBackup}><Text style={styles.modalSave}>Restore</Text></Pressable></View>
+          <View style={styles.modalHeader}><Pressable onPress={() => setBackupOpen(false)}><Text style={styles.modalCancel}>Close</Text></Pressable><Text style={styles.modalTitle}>{backupMode === "export" ? "Copy backup text" : "Restore backup"}</Text>{backupMode === "export" ? <Pressable onPress={copyBackup}><Text style={styles.modalSave}>Copy text</Text></Pressable> : <Pressable onPress={importBackup}><Text style={styles.modalSave}>Restore</Text></Pressable>}</View>
           <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === "ios" ? "padding" : "height"}>
           <ScrollView contentContainerStyle={styles.backupContent} keyboardShouldPersistTaps="handled">
-            <Text style={styles.cardTitle}>Paste a GRIMMS backup</Text>
-            <Text style={styles.bodyText}>Use Export backup to share a copy. To restore, paste the complete backup text below. The app checks its structure and saves your current tracker as a recovery copy first.</Text>
-            <TextInput value={backupText} onChangeText={setBackupText} multiline autoCapitalize="none" style={styles.backupInput} placeholder="Paste backup JSON here" placeholderTextColor={COLORS.placeholder} />
-            <Text style={styles.fieldHint}>The restore preview shows the records it found before you confirm.</Text>
+            <Text style={styles.cardTitle}>{backupMode === "export" ? "Your tracker backup" : "Paste a GRIMMS backup"}</Text>
+            <Text style={styles.bodyText}>{backupMode === "export" ? "Choose Copy text, then keep the copied text somewhere private. To restore later, open Restore backup and paste the complete text. This is a copyable backup; nothing downloads to your computer." : "Paste the complete backup text below. The app checks its structure and saves your current tracker as a recovery copy before restoring."}</Text>
+            <TextInput value={backupText} onChangeText={setBackupText} multiline autoCapitalize="none" autoCorrect={false} style={styles.backupInput} placeholder="Paste backup JSON here" placeholderTextColor={COLORS.placeholder} />
+            {backupMode === "export" ? <View style={styles.actionRow}><Action label="Copy backup text" onPress={copyBackup} /><Action label="Select the text to copy manually" quiet onPress={() => Alert.alert("Copy manually", "Click inside the backup box, select all text, and copy it. Keep that text somewhere private.")} /></View> : <Text style={styles.fieldHint}>After you choose Restore, review the record counts and confirm before replacing the current tracker.</Text>}
           </ScrollView>
           </KeyboardAvoidingView>
         </SafeAreaView>
@@ -5228,10 +5312,40 @@ function EmptyState({ title, body, action, onPress }) {
 /* eslint-disable react-native/no-unused-styles -- The theme factory rebuilds this module-level stylesheet at runtime, which the static rule cannot trace. */
 function makeStyles() { return StyleSheet.create({
   safe: { flex: 1, backgroundColor: COLORS.paper },
+  appBody: { flex: 1, minHeight: 0 },
+  appBodyWide: { flexDirection: "row" },
+  contentPane: { flex: 1, minWidth: 0 },
+  sidebar: { width: 232, backgroundColor: COLORS.card, borderRightWidth: 1, borderRightColor: COLORS.line },
+  sidebarScroll: { flex: 1 },
+  sidebarContent: { paddingHorizontal: 12, paddingTop: 14, paddingBottom: 12 },
+  sidebarGroup: { marginBottom: 13 },
+  sidebarGroupTitle: { color: COLORS.muted, fontSize: 9, letterSpacing: 1.15, fontWeight: "800", paddingHorizontal: 8, paddingBottom: 5 },
+  sidebarLink: { minHeight: 38, borderRadius: 9, flexDirection: "row", alignItems: "center", gap: 9, paddingHorizontal: 8, marginBottom: 2 },
+  sidebarLinkSelected: { backgroundColor: COLORS.soft },
+  sidebarIcon: { width: 26, height: 26, borderRadius: 7, backgroundColor: COLORS.softAlt, alignItems: "center", justifyContent: "center" },
+  sidebarIconSelected: { backgroundColor: COLORS.wine },
+  sidebarIconText: { color: COLORS.muted, fontSize: 8, fontWeight: "800", letterSpacing: 0.2 },
+  sidebarIconTextSelected: { color: COLORS.onAccent },
+  sidebarLinkText: { flex: 1, color: COLORS.ink, fontSize: 11, fontWeight: "600" },
+  sidebarLinkTextSelected: { color: COLORS.wine, fontWeight: "800" },
+  sidebarActiveMark: { width: 4, height: 4, borderRadius: 2, backgroundColor: COLORS.wine },
+  sidebarFooter: { borderTopWidth: 1, borderTopColor: COLORS.line, paddingHorizontal: 16, paddingVertical: 12 },
+  sidebarFooterTitle: { color: COLORS.muted, fontSize: 8, fontWeight: "800", letterSpacing: 1.1 },
+  sidebarFooterText: { color: COLORS.muted, fontSize: 9, marginTop: 3 },
+  topBarStart: { flexDirection: "row", alignItems: "center", gap: 10 },
+  menuButton: { width: 34, height: 34, borderRadius: 9, borderWidth: 1, borderColor: COLORS.line, backgroundColor: COLORS.card, alignItems: "center", justifyContent: "center" },
+  menuLines: { width: 15, gap: 3 },
+  menuLine: { width: 15, height: 2, borderRadius: 1, backgroundColor: COLORS.ink },
+  mobileNavOverlay: { flex: 1, flexDirection: "row" },
+  mobileNavScrim: { position: "absolute", left: 0, right: 0, top: 0, bottom: 0, backgroundColor: "rgba(20,18,20,0.42)" },
+  mobileNavDrawer: { width: 300, maxWidth: "86%", height: "100%", backgroundColor: COLORS.card, borderRightWidth: 1, borderRightColor: COLORS.line },
+  mobileNavHeader: { minHeight: 62, flexDirection: "row", alignItems: "center", justifyContent: "space-between", borderBottomWidth: 1, borderBottomColor: COLORS.line, paddingHorizontal: 17 },
+  mobileNavTitle: { color: COLORS.ink, fontSize: 17, fontWeight: "800" },
+  mobileNavSubtitle: { color: COLORS.muted, fontSize: 10, marginTop: 2 },
   loading: { flex: 1, alignItems: "center", justifyContent: "center", backgroundColor: COLORS.paper },
   loadingText: { color: COLORS.muted, marginTop: 12, fontSize: 14 },
   logoMark: { color: COLORS.wine, fontSize: 36, fontWeight: "800" },
-  topBar: { height: 66, paddingHorizontal: 18, flexDirection: "row", alignItems: "center", justifyContent: "space-between", borderBottomColor: COLORS.line, borderBottomWidth: StyleSheet.hairlineWidth },
+  topBar: { height: 58, paddingHorizontal: 16, flexDirection: "row", alignItems: "center", justifyContent: "space-between", borderBottomColor: COLORS.line, borderBottomWidth: StyleSheet.hairlineWidth, backgroundColor: COLORS.card },
   brand: { flexDirection: "row", alignItems: "center", gap: 10 },
   brandMark: { width: 36, height: 36, borderRadius: 12, backgroundColor: COLORS.wine, alignItems: "center", justifyContent: "center" },
   brandMarkText: { color: COLORS.onAccent, fontSize: 21, fontWeight: "800", fontFamily: Platform.OS === "ios" ? "Georgia" : "serif" },
@@ -5241,22 +5355,25 @@ function makeStyles() { return StyleSheet.create({
   saveState: { color: COLORS.muted, fontSize: 11 },
   addCircle: { width: 36, height: 36, borderRadius: 18, backgroundColor: COLORS.wine, alignItems: "center", justifyContent: "center" },
   addCircleText: { color: COLORS.onAccent, fontSize: 24, lineHeight: 27, fontWeight: "400" },
-  searchWrap: { marginHorizontal: 18, marginTop: 12, height: 42, borderRadius: 13, borderWidth: 1, borderColor: COLORS.line, backgroundColor: COLORS.card, flexDirection: "row", alignItems: "center", paddingHorizontal: 12 },
-  searchIcon: { fontSize: 21, color: COLORS.muted, marginRight: 8 },
+  searchWrap: { marginHorizontal: 24, marginTop: 8, height: 38, borderRadius: 10, borderWidth: 1, borderColor: COLORS.line, backgroundColor: COLORS.card, flexDirection: "row", alignItems: "center", paddingHorizontal: 10 },
+  searchGlyph: { width: 18, height: 18, marginRight: 8, justifyContent: "center" },
+  searchLens: { width: 10, height: 10, borderRadius: 6, borderWidth: 1.5, borderColor: COLORS.muted, marginLeft: 1, marginTop: -2 },
+  searchHandle: { position: "absolute", width: 6, height: 1.5, borderRadius: 1, backgroundColor: COLORS.muted, left: 10, top: 12, transform: [{ rotate: "45deg" }] },
   searchInput: { flex: 1, color: COLORS.ink, fontSize: 14, paddingVertical: 8 },
   searchClear: { color: COLORS.muted, fontSize: 22, paddingHorizontal: 4 },
-  screenHeading: { paddingHorizontal: 20, paddingTop: 17, paddingBottom: 10, flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
-  screenTitle: { color: COLORS.ink, fontSize: 26, fontWeight: "700", letterSpacing: -0.5 },
-  screenSubtitle: { color: COLORS.muted, fontSize: 12, marginTop: 4 },
+  screenHeading: { paddingHorizontal: 24, paddingTop: 11, paddingBottom: 7, flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
+  screenTitle: { color: COLORS.ink, fontSize: 24, fontWeight: "700", letterSpacing: -0.45 },
+  screenSubtitle: { color: COLORS.muted, fontSize: 11, marginTop: 3 },
   headerActions: { flexDirection: "row", alignItems: "center", gap: 7, marginLeft: 8 },
   helpButton: { width: 34, height: 34, borderRadius: 17, borderWidth: 1, borderColor: COLORS.line, backgroundColor: COLORS.card, alignItems: "center", justifyContent: "center" },
   helpButtonText: { color: COLORS.wine, fontSize: 17, fontWeight: "800" },
   headerAdd: { backgroundColor: COLORS.wine, paddingHorizontal: 13, paddingVertical: 9, borderRadius: 12 },
   headerAddText: { color: COLORS.onAccent, fontSize: 13, fontWeight: "700" },
   mainScroll: { flex: 1 },
-  pageContent: { paddingHorizontal: 16, paddingBottom: 24 },
-  welcomeBox: { backgroundColor: COLORS.wine, padding: 20, borderRadius: 22, marginBottom: 20, overflow: "hidden" },
-  welcomeBoxCompact: { backgroundColor: COLORS.wine, padding: 19, borderRadius: 20, marginBottom: 18 },
+  pageContent: { paddingHorizontal: 16, paddingBottom: 16, maxWidth: 1280, width: "100%", alignSelf: "center" },
+  pageContentWide: { paddingHorizontal: 24 },
+  welcomeBox: { backgroundColor: COLORS.wine, padding: 15, borderRadius: 16, marginBottom: 12, overflow: "hidden" },
+  welcomeBoxCompact: { backgroundColor: COLORS.wine, padding: 14, borderRadius: 15, marginBottom: 11 },
   heroOrbOne: { position: "absolute", width: 150, height: 150, borderRadius: 75, backgroundColor: "rgba(255,255,255,0.055)", right: -48, top: 4 },
   heroOrbTwo: { position: "absolute", width: 92, height: 92, borderRadius: 46, borderWidth: 1, borderColor: "rgba(255,255,255,0.12)", right: 29, top: 38 },
   heroTopline: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
@@ -5274,7 +5391,7 @@ function makeStyles() { return StyleSheet.create({
   primaryButtonFull: { backgroundColor: COLORS.wine, borderRadius: 13, padding: 14, marginTop: 16 },
   primaryButtonFullText: { color: COLORS.onAccent, fontWeight: "700", fontSize: 13, textAlign: "center" },
   sectionHeadingRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginTop: 7, marginBottom: 9 },
-  sectionTitle: { color: COLORS.ink, fontSize: 17, fontWeight: "700", marginTop: 14, marginBottom: 9 },
+  sectionTitle: { color: COLORS.ink, fontSize: 15, fontWeight: "750", marginTop: 10, marginBottom: 7 },
   subtle: { color: COLORS.muted, fontSize: 11 },
   metricGrid: { flexDirection: "row", flexWrap: "wrap", gap: 9, marginBottom: 8 },
   analyticsPlatformBlock: { paddingVertical: 9, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: COLORS.line },
@@ -5311,14 +5428,14 @@ function makeStyles() { return StyleSheet.create({
   fulfillmentListCount: { color: COLORS.wine, fontSize: 16, fontWeight: "800", width: 30, textAlign: "center" },
   fulfillmentListLabel: { color: COLORS.ink, fontSize: 12, fontWeight: "600", flex: 1 },
   fulfillmentListArrow: { color: COLORS.muted, fontSize: 22, paddingHorizontal: 2 },
-  card: { backgroundColor: COLORS.card, borderWidth: 1, borderColor: COLORS.line, borderRadius: 17, padding: 15, marginBottom: 10 },
+  card: { backgroundColor: COLORS.card, borderWidth: 1, borderColor: COLORS.line, borderRadius: 14, padding: 12, marginBottom: 8 },
   settingsAccordion: { backgroundColor: COLORS.card, borderWidth: 1, borderColor: COLORS.line, borderRadius: 16, marginBottom: 10, overflow: "hidden" },
   settingsAccordionHeader: { minHeight: 66, flexDirection: "row", alignItems: "center", gap: 12, paddingHorizontal: 15, paddingVertical: 11, backgroundColor: COLORS.card },
   settingsAccordionTitle: { color: COLORS.ink, fontSize: 14, fontWeight: "800" },
   settingsAccordionSubtitle: { color: COLORS.muted, fontSize: 10, lineHeight: 15, marginTop: 3 },
   settingsAccordionChevron: { width: 28, height: 28, borderRadius: 9, borderWidth: 1, borderColor: COLORS.softLine, backgroundColor: COLORS.softAlt, color: COLORS.ink, fontSize: 20, lineHeight: 25, fontWeight: "500", textAlign: "center", overflow: "hidden" },
   settingsAccordionContent: { paddingHorizontal: 14, paddingBottom: 13, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: COLORS.line },
-  cardTitle: { color: COLORS.ink, fontSize: 16, fontWeight: "700", marginBottom: 12 },
+  cardTitle: { color: COLORS.ink, fontSize: 15, fontWeight: "700", marginBottom: 8 },
   cardTop: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start", gap: 8 },
   compactOrderCard: { padding: 12 },
   compactComponentCard: { padding: 12, marginBottom: 8 },
@@ -5336,8 +5453,8 @@ function makeStyles() { return StyleSheet.create({
   recordMeta: { color: COLORS.muted, fontSize: 11, marginTop: 4, lineHeight: 15 },
   detailRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginTop: 12, marginBottom: 5, gap: 8 },
   detailText: { color: COLORS.ink, fontSize: 12, fontWeight: "600" },
-  bodyText: { color: COLORS.muted, fontSize: 12, lineHeight: 18, marginTop: 7 },
-  actionRow: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginTop: 12 },
+  bodyText: { color: COLORS.muted, fontSize: 12, lineHeight: 17, marginTop: 5 },
+  actionRow: { flexDirection: "row", flexWrap: "wrap", gap: 6, marginTop: 9 },
   actionButton: { paddingVertical: 9, paddingHorizontal: 13, backgroundColor: COLORS.card, borderRadius: 11, borderWidth: 1, borderColor: COLORS.softLine },
   actionQuiet: { backgroundColor: COLORS.card, borderColor: COLORS.softLine },
   actionText: { color: COLORS.wine, fontSize: 11, fontWeight: "700" },
@@ -5366,7 +5483,7 @@ function makeStyles() { return StyleSheet.create({
   quickAddButton: { backgroundColor: COLORS.rose, borderColor: COLORS.line, borderWidth: 1, paddingHorizontal: 12, paddingVertical: 10, borderRadius: 12 },
   quickAddText: { color: COLORS.wineDark, fontSize: 11, fontWeight: "700" },
   infoBanner: { backgroundColor: COLORS.lavender, borderRadius: 15, padding: 14, marginBottom: 12 },
-  screenDashboardHeader: { padding: 15, marginBottom: 12 },
+  screenDashboardHeader: { padding: 12, marginBottom: 8 },
   screenDashboardTitle: { color: COLORS.ink, fontSize: 18, lineHeight: 23, fontWeight: "800" },
   infoBannerTitle: { color: COLORS.ink, fontSize: 13, fontWeight: "700" },
   infoBannerText: { color: COLORS.muted, fontSize: 11, lineHeight: 16, marginTop: 4 },
@@ -5530,7 +5647,7 @@ function makeStyles() { return StyleSheet.create({
   rangeButtonTextSelected: { color: COLORS.onAccent },
   planningPeriodNav: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 10 },
   planningPeriodText: { color: COLORS.ink, fontSize: 12, fontWeight: "700" },
-  bottomNav: { height: 70, backgroundColor: COLORS.card, borderTopWidth: 1, borderTopColor: COLORS.line, flexDirection: "row", justifyContent: "space-around", alignItems: "center", paddingBottom: Platform.OS === "ios" ? 2 : 0 },
+  bottomNav: { height: 0, display: "none" },
   navItem: { flex: 1, alignItems: "center", justifyContent: "center", gap: 1 },
   navCenterItem: { flex: 1, alignItems: "center", justifyContent: "center", gap: 1, overflow: "visible" },
   navCenterButton: { width: 44, height: 44, borderRadius: 22, marginTop: -18, borderWidth: 3, borderColor: COLORS.card, backgroundColor: COLORS.wine, alignItems: "center", justifyContent: "center", elevation: 5 },
@@ -5540,7 +5657,7 @@ function makeStyles() { return StyleSheet.create({
   navActive: { color: COLORS.wine, fontWeight: "800" },
   navLabel: { color: COLORS.muted, fontSize: 8 },
   navLabelActive: { color: COLORS.wine, fontWeight: "700" },
-  bottomNote: { paddingVertical: 19, alignItems: "center" },
+  bottomNote: { paddingVertical: 9, alignItems: "center" },
   bottomNoteText: { color: COLORS.muted, fontSize: 9, letterSpacing: 0.3 },
   profitCard: { backgroundColor: COLORS.wine, borderColor: COLORS.wine, marginTop: 5 },
   profitLabel: { color: COLORS.onAccent, fontSize: 11, fontWeight: "600" },
@@ -5572,11 +5689,29 @@ function makeStyles() { return StyleSheet.create({
   ideaLaneEmptyText: { color: COLORS.ink, fontSize: 13, fontWeight: "700", textAlign: "center" },
   ideaLaneEmptyHint: { color: COLORS.muted, fontSize: 11, lineHeight: 16, textAlign: "center", marginBottom: 4 },
   ideaNote: { padding: 12, marginHorizontal: 10, marginBottom: 10, borderRadius: 13, backgroundColor: COLORS.soft, borderWidth: 1, borderColor: COLORS.line },
-  moreGrid: { flexDirection: "row", flexWrap: "wrap", gap: 9 },
-  moreTile: { width: "48%", flexGrow: 1, backgroundColor: COLORS.card, borderWidth: 1, borderColor: COLORS.line, borderRadius: 16, padding: 13, minHeight: 104 },
-  moreIcon: { color: COLORS.wine, fontSize: 20, marginBottom: 7 },
+  moreGrid: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
+  moreTile: { width: "48%", flexGrow: 1, backgroundColor: COLORS.card, borderWidth: 1, borderColor: COLORS.line, borderRadius: 13, padding: 11, minHeight: 82 },
+  moreIcon: { color: COLORS.wine, fontSize: 11, fontWeight: "800", marginBottom: 5 },
   moreTitle: { color: COLORS.ink, fontSize: 13, fontWeight: "700" },
   moreSub: { color: COLORS.muted, fontSize: 10, lineHeight: 14, marginTop: 4 },
+  helpHero: { backgroundColor: COLORS.wine, borderRadius: 13, paddingHorizontal: 16, paddingVertical: 14, marginBottom: 10 },
+  helpEyebrow: { color: COLORS.onAccent, opacity: 0.84, fontSize: 9, letterSpacing: 1.2, fontWeight: "800" },
+  helpHeroTitle: { color: COLORS.onAccent, fontSize: 20, fontWeight: "800", marginTop: 4 },
+  helpHeroText: { color: COLORS.onAccent, opacity: 0.9, fontSize: 11, lineHeight: 16, marginTop: 4 },
+  helpSearch: { backgroundColor: COLORS.card, borderWidth: 1, borderColor: COLORS.line, borderRadius: 12, paddingHorizontal: 12, paddingVertical: 8, marginBottom: 8 },
+  helpSearchLabel: { color: COLORS.ink, fontSize: 11, fontWeight: "700", marginBottom: 5 },
+  helpLinkWrap: { flexDirection: "row", flexWrap: "wrap", gap: 6, marginBottom: 5 },
+  helpLink: { minHeight: 34, flexDirection: "row", alignItems: "center", gap: 9, backgroundColor: COLORS.card, borderWidth: 1, borderColor: COLORS.line, borderRadius: 9, paddingHorizontal: 10 },
+  helpLinkLabel: { color: COLORS.wine, fontSize: 10, fontWeight: "700" },
+  helpLinkArrow: { color: COLORS.muted, fontSize: 17, lineHeight: 20 },
+  helpSectionHead: { flexDirection: "row", alignItems: "baseline", justifyContent: "space-between" },
+  helpQuestion: { backgroundColor: COLORS.card, borderWidth: 1, borderColor: COLORS.line, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 10, marginBottom: 5 },
+  helpQuestionTop: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 12 },
+  helpQuestionText: { flex: 1, color: COLORS.ink, fontSize: 11, lineHeight: 15, fontWeight: "700" },
+  helpQuestionMark: { color: COLORS.wine, fontSize: 18, lineHeight: 20, fontWeight: "600" },
+  helpGuide: { backgroundColor: COLORS.card, borderWidth: 1, borderColor: COLORS.line, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 10, marginBottom: 5 },
+  helpGuideTitle: { color: COLORS.ink, fontSize: 11, fontWeight: "800" },
+  helpGuideSummary: { color: COLORS.muted, fontSize: 10, lineHeight: 15, marginTop: 4 },
   quickNoteCard: { marginTop: 14 },
   helpCard: { backgroundColor: COLORS.card, borderRadius: 20, borderWidth: 1, borderColor: COLORS.line, padding: 19, margin: 20 },
   helpExample: { backgroundColor: COLORS.soft, borderColor: COLORS.line, borderWidth: 1, borderRadius: 13, padding: 12, marginTop: 12, marginBottom: 12 },
@@ -5590,9 +5725,9 @@ function makeStyles() { return StyleSheet.create({
   chooserBackdrop: { flex: 1, backgroundColor: "rgba(38,32,31,0.42)", justifyContent: "flex-end" },
   chooserCard: { backgroundColor: COLORS.paper, borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 18, paddingBottom: 30 },
   chooserGrid: { flexDirection: "row", flexWrap: "wrap", gap: 9, marginTop: 6 },
-  chooserOption: { width: "31%", flexGrow: 1, minHeight: 74, borderRadius: 14, backgroundColor: COLORS.card, borderColor: COLORS.line, borderWidth: 1, alignItems: "center", justifyContent: "center", padding: 8 },
-  chooserIcon: { color: COLORS.wine, fontSize: 20 },
-  chooserLabel: { color: COLORS.ink, fontSize: 10, fontWeight: "700", marginTop: 5 },
+  chooserOption: { width: "31%", flexGrow: 1, minHeight: 64, borderRadius: 12, backgroundColor: COLORS.card, borderColor: COLORS.line, borderWidth: 1, alignItems: "center", justifyContent: "center", padding: 7 },
+  chooserIcon: { width: 25, height: 25, borderRadius: 7, overflow: "hidden", color: COLORS.wine, backgroundColor: COLORS.soft, fontSize: 8, fontWeight: "800", textAlign: "center", textAlignVertical: "center" },
+  chooserLabel: { color: COLORS.ink, fontSize: 10, fontWeight: "700", marginTop: 4 },
 }); }
 /* eslint-enable react-native/no-unused-styles */
 let styles = makeStyles();
