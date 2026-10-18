@@ -2371,6 +2371,8 @@ export default function App() {
   const [themePickerOpen, setThemePickerOpen] = useState(false);
   const [settingsSections, setSettingsSections] = useState({ profile: true, appearance: true, marketplaces: true, fees: false, widgets: false, options: false, data: false, archive: false, announcements: false });
   const [backupOpen, setBackupOpen] = useState(false);
+  const [pendingRecordConfirmation, setPendingRecordConfirmation] = useState(null);
+  const [recordActionNotice, setRecordActionNotice] = useState("");
   const [clearDataOpen, setClearDataOpen] = useState(false);
   const [clearConfirmText, setClearConfirmText] = useState("");
   const [factoryResetOpen, setFactoryResetOpen] = useState(false);
@@ -2677,6 +2679,23 @@ export default function App() {
     const updated = recipe(old);
     return updated && updated !== old ? updated : updated || old;
   });
+  const requestRecordConfirmation = (confirmation) => setPendingRecordConfirmation(confirmation);
+  const finishRecordConfirmation = () => {
+    const confirmation = pendingRecordConfirmation;
+    if (!confirmation) return;
+    setPendingRecordConfirmation(null);
+    try {
+      confirmation.onConfirm();
+      setRecordActionNotice(confirmation.successMessage || "Your change was applied. Check the save status in the top bar.");
+    } catch (_error) {
+      setRecordActionNotice("The change could not be completed. Your saved data was left as it was.");
+    }
+  };
+  useEffect(() => {
+    if (!recordActionNotice) return undefined;
+    const timer = setTimeout(() => setRecordActionNotice(""), 6000);
+    return () => clearTimeout(timer);
+  }, [recordActionNotice]);
   const readAnnouncementIds = Array.isArray(db.readAnnouncementIds) ? db.readAnnouncementIds : [];
   const dismissedAnnouncementIds = Array.isArray(db.dismissedAnnouncementIds) ? db.dismissedAnnouncementIds : [];
   const visibleAnnouncements = ANNOUNCEMENTS.filter((message) => !dismissedAnnouncementIds.includes(message.id));
@@ -2989,7 +3008,7 @@ export default function App() {
     return true;
   };
 
-  const archiveRecord = (key, record, label) => {
+  const archiveRecord = (key, record, label, alreadyConfirmed = false) => {
     const activeListings = key === "products" ? db.listings.filter((item) => item.productId === record.id && active(item)).length : 0;
     const recipeProducts = key === "components" ? db.products.filter((item) => active(item) && (item.recipe || []).some((part) => part.componentId === record.id)) : [];
     const message = activeListings
@@ -2997,9 +3016,7 @@ export default function App() {
       : key === "products" ? "This keeps history, returns materials for unsold finished units to component stock, and sets finished stock to zero. Restoring the product will use those materials again."
         : recipeProducts.length ? "This keeps its history and hides it from active lists. It is used by " + recipeProducts.map((item) => item.name).join(", ") + ". Production for those products will need this component restored or replaced in the recipe."
           : "This keeps its history and hides it from active lists.";
-    Alert.alert("Archive " + label + "?", message, [
-      { text: "Cancel", style: "cancel" },
-      { text: "Archive", style: "destructive", onPress: () => setData((old) => {
+    const applyArchive = () => setData((old) => {
         if (key !== "products") {
           const now = new Date().toISOString();
           return { ...old, [key]: old[key].map((item) => item.id === record.id ? { ...item, archived: true, archivedAt: now, auditLog: (item.auditLog || []).concat([{ id: uid("audit"), action: "Record archived", date: now, changes: [{ field: "archived", from: !!item.archived, to: true }] }]) } : item) };
@@ -3026,8 +3043,18 @@ export default function App() {
           componentTransactions: (old.componentTransactions || []).concat(componentTransactions),
           productTransactions: unsoldUnits > 0 ? (old.productTransactions || []).concat([{ id: uid("product-archive"), productId: product.id, quantity: -unsoldUnits, kind: "Product archived", date: now, note: "Returned unsold product materials to component stock" }]) : old.productTransactions || [],
         };
-      }) },
-    ]);
+      });
+    if (alreadyConfirmed) {
+      applyArchive();
+      return;
+    }
+    requestRecordConfirmation({
+      title: "Archive " + label + "?",
+      message,
+      confirmLabel: "Archive",
+      successMessage: label + " archived. You can restore it in Settings → Archived records.",
+      onConfirm: applyArchive,
+    });
   };
 
   const restoreRecord = (key, record) => {
@@ -3072,9 +3099,12 @@ export default function App() {
 
   const permanentlyDeleteRecord = (key, record, label) => {
     if (key === "orders") {
-      Alert.alert("Delete this sale?", "This removes its income from totals, restores the units that were still deducted for this sale, and keeps a deleted copy in the audit history.", [
-        { text: "Cancel", style: "cancel" },
-        { text: "Delete sale", style: "destructive", onPress: () => setData((old) => {
+      requestRecordConfirmation({
+        title: "Delete this sale?",
+        message: "This removes its income from totals, restores the units that were still deducted for this sale, and keeps a deleted copy in the audit history.",
+        confirmLabel: "Delete sale",
+        successMessage: "Sale deleted. Its history is still available on the Audit page.",
+        onConfirm: () => setData((old) => {
           const order = old.orders.find((item) => item.id === record.id);
           if (!order) return old;
           const soldByProduct = {};
@@ -3091,8 +3121,8 @@ export default function App() {
             listings: old.listings.map((listing) => listing.soldOutOrderId === order.id ? { ...listing, status: listing.soldOutPreviousStatus || "Active", needsArchive: false, soldOutAt: null, soldOutOrderId: null, soldOutPreviousStatus: null, auditLog: (listing.auditLog || []).concat([{ id: uid("audit"), action: "Sold-out status cleared after sale deletion", date: now, changes: [{ field: "status", from: "Sold", to: listing.soldOutPreviousStatus || "Active" }, { field: "needsArchive", from: true, to: false }] }]) } : listing),
             productTransactions: (old.productTransactions || []).concat(Object.entries(soldByProduct).filter(([, quantity]) => quantity > 0).map(([productId, quantity]) => ({ id: uid("sale-delete"), productId, quantity, kind: "Sale deleted · inventory returned", orderId: order.id, date: now, note: order.orderSku || order.marketplace || "" }))),
           };
-        }) },
-      ]);
+        }),
+      });
       return;
     }
     const references = key === "products" ? [
@@ -3113,15 +3143,21 @@ export default function App() {
       ].filter(Boolean);
     })() : [];
     if (references.length) {
-      Alert.alert("Archive this record instead", `This ${label.toLowerCase()} is connected to ${references.join(", ")}. It cannot be permanently deleted without breaking those records. Archive it to hide it and keep its history.`, [
-        { text: "Cancel", style: "cancel" },
-        { text: "Archive", onPress: () => setData((old) => ({ ...old, [key]: (old[key] || []).map((item) => item.id === record.id ? { ...item, archived: true } : item) })) },
-      ]);
+      requestRecordConfirmation({
+        title: "Archive this record instead?",
+        message: `This ${label.toLowerCase()} is connected to ${references.join(", ")}. It cannot be permanently deleted without breaking those records. Archive it to hide it and keep its history.`,
+        confirmLabel: "Archive",
+        successMessage: label + " archived because it is linked to other records. You can restore it in Settings → Archived records.",
+        onConfirm: () => archiveRecord(key, record, label, true),
+      });
       return;
     }
-    Alert.alert("Permanently delete this " + label.toLowerCase() + "?", "This removes the record from this device and cannot be undone. Archived records can be restored until you delete them.", [
-      { text: "Cancel", style: "cancel" },
-      { text: "Delete permanently", style: "destructive", onPress: () => setData((old) => ({
+    requestRecordConfirmation({
+      title: "Permanently delete this " + label.toLowerCase() + "?",
+      message: "This removes the record from this device and cannot be undone. Archived records can be restored until you delete them.",
+      confirmLabel: "Delete permanently",
+      successMessage: label + " deleted from this browser.",
+      onConfirm: () => setData((old) => ({
         ...old,
         [key]: (old[key] || []).filter((item) => item.id !== record.id),
         ...(key === "components" ? {
@@ -3133,8 +3169,8 @@ export default function App() {
             return !(entry.kind === "Opening balance" && matchesComponent);
           }),
         } : {}),
-      })) },
-    ]);
+      })),
+    });
   };
 
   const completeTask = (task) => setData((old) => ({
@@ -3351,22 +3387,22 @@ export default function App() {
     setTimeEdit(null);
   };
 
-  const deleteShiftSession = (session) => Alert.alert("Delete this shift?", "The saved work time will be removed from your shift history and totals.", [
-    { text: "Keep shift", style: "cancel" },
-    { text: "Delete shift", style: "destructive", onPress: () => setData((old) => ({ ...old, timeSessions: (old.timeSessions || []).filter((item) => item.id !== session.id) })) },
-  ]);
-  const discardActiveShift = () => Alert.alert("Delete this active shift?", "This discards the running shift without saving it to history.", [
-    { text: "Keep shift", style: "cancel" },
-    { text: "Delete shift", style: "destructive", onPress: () => setData((old) => old.activeShift ? { ...old, activeShift: null } : old) },
-  ]);
-  const deleteTimerSession = (session) => Alert.alert("Delete this timer record?", "The saved focus time will be removed from your history and totals.", [
-    { text: "Keep timer", style: "cancel" },
-    { text: "Delete timer", style: "destructive", onPress: () => setData((old) => ({ ...old, timerSessions: (old.timerSessions || []).filter((item) => item.id !== session.id) })) },
-  ]);
-  const discardActiveTimer = () => Alert.alert("Discard this running timer?", "The active timer will stop without saving a focus session.", [
-    { text: "Keep timer", style: "cancel" },
-    { text: "Discard timer", style: "destructive", onPress: () => setData((old) => ({ ...old, activeTimer: null })) },
-  ]);
+  const deleteShiftSession = (session) => requestRecordConfirmation({
+    title: "Delete this shift?", message: "The saved work time will be removed from your shift history and totals.", confirmLabel: "Delete shift", successMessage: "Shift deleted from your history.",
+    onConfirm: () => setData((old) => ({ ...old, timeSessions: (old.timeSessions || []).filter((item) => item.id !== session.id) })),
+  });
+  const discardActiveShift = () => requestRecordConfirmation({
+    title: "Delete this active shift?", message: "This discards the running shift without saving it to history.", confirmLabel: "Delete shift", successMessage: "The active shift was discarded.",
+    onConfirm: () => setData((old) => old.activeShift ? { ...old, activeShift: null } : old),
+  });
+  const deleteTimerSession = (session) => requestRecordConfirmation({
+    title: "Delete this timer record?", message: "The saved focus time will be removed from your history and totals.", confirmLabel: "Delete timer", successMessage: "Timer record deleted from your history.",
+    onConfirm: () => setData((old) => ({ ...old, timerSessions: (old.timerSessions || []).filter((item) => item.id !== session.id) })),
+  });
+  const discardActiveTimer = () => requestRecordConfirmation({
+    title: "Discard this running timer?", message: "The active timer will stop without saving a focus session.", confirmLabel: "Discard timer", successMessage: "The active timer was discarded.",
+    onConfirm: () => setData((old) => ({ ...old, activeTimer: null })),
+  });
 
   const openDiscountEditor = (listing, plan) => setDiscountEditor({ listingId: listing.id, plan: plan || null });
 
@@ -3416,33 +3452,33 @@ export default function App() {
     Alert.alert("Relist saved", "The listing’s active days have restarted from today. Keep marketplace inventory and listing details in sync there too.");
   };
 
-  const deleteDiscountPlan = (listing, plan) => Alert.alert("Delete this discount plan?", "The saved promotion dates and discount will be removed.", [
-    { text: "Cancel", style: "cancel" },
-    { text: "Delete plan", style: "destructive", onPress: () => setData((old) => {
+  const deleteDiscountPlan = (listing, plan) => requestRecordConfirmation({
+    title: "Delete this discount plan?", message: "The saved promotion dates and discount will be removed.", confirmLabel: "Delete plan", successMessage: "Discount plan deleted.",
+    onConfirm: () => setData((old) => {
       const now = new Date().toISOString();
       return { ...old, listings: old.listings.map((item) => item.id === listing.id ? { ...item, discountPlans: (item.discountPlans || []).filter((current) => current.id !== plan.id), auditLog: (item.auditLog || []).concat([{ id: uid("audit"), action: "Discount plan deleted", date: now, changes: [{ field: "discount plan", from: plan, to: null }] }]) } : item) };
-    }) },
-  ]);
+    }),
+  });
 
-  const clearRelistDate = (listing) => Alert.alert("Delete this planned relisting?", "Only the reminder date will be removed. The listing and its relisting history will stay saved.", [
-    { text: "Keep relisting", style: "cancel" },
-    { text: "Delete relisting", style: "destructive", onPress: () => setData((old) => ({ ...old, listings: old.listings.map((item) => item.id === listing.id ? { ...item, relistDate: "", relistDone: false, auditLog: (item.auditLog || []).concat([{ id: uid("audit"), action: "Relisting plan deleted", date: new Date().toISOString(), changes: [{ field: "relistDate", from: item.relistDate || "", to: "" }] }]) } : item) })) },
-  ]);
+  const clearRelistDate = (listing) => requestRecordConfirmation({
+    title: "Delete this planned relisting?", message: "Only the reminder date will be removed. The listing and its relisting history will stay saved.", confirmLabel: "Delete relisting", successMessage: "Relisting reminder deleted. The listing remains saved.",
+    onConfirm: () => setData((old) => ({ ...old, listings: old.listings.map((item) => item.id === listing.id ? { ...item, relistDate: "", relistDone: false, auditLog: (item.auditLog || []).concat([{ id: uid("audit"), action: "Relisting plan deleted", date: new Date().toISOString(), changes: [{ field: "relistDate", from: item.relistDate || "", to: "" }] }]) } : item) })),
+  });
 
-  const deleteRelistHistoryEntry = (listing, entry) => Alert.alert("Delete this relisting record?", "This removes the selected relisting from this listing’s history.", [
-    { text: "Keep record", style: "cancel" },
-    { text: "Delete relisting", style: "destructive", onPress: () => setData((old) => ({ ...old, listings: old.listings.map((item) => item.id === listing.id ? { ...item, relistHistory: (item.relistHistory || []).filter((saved) => saved.id !== entry.id), auditLog: (item.auditLog || []).concat([{ id: uid("audit"), action: "Relisting history entry deleted", date: new Date().toISOString(), note: dateLabel(entry.date) }]) } : item) })) },
-  ]);
+  const deleteRelistHistoryEntry = (listing, entry) => requestRecordConfirmation({
+    title: "Delete this relisting record?", message: "This removes the selected relisting from this listing’s history.", confirmLabel: "Delete relisting", successMessage: "Relisting history entry deleted.",
+    onConfirm: () => setData((old) => ({ ...old, listings: old.listings.map((item) => item.id === listing.id ? { ...item, relistHistory: (item.relistHistory || []).filter((saved) => saved.id !== entry.id), auditLog: (item.auditLog || []).concat([{ id: uid("audit"), action: "Relisting history entry deleted", date: new Date().toISOString(), note: dateLabel(entry.date) }]) } : item) })),
+  });
 
-  const deleteOrderTimelineStep = (order, index) => Alert.alert("Delete this order history entry?", "The order’s current status will follow the last remaining history entry.", [
-    { text: "Keep entry", style: "cancel" },
-    { text: "Delete entry", style: "destructive", onPress: () => setData((old) => ({ ...old, orders: old.orders.map((item) => {
+  const deleteOrderTimelineStep = (order, index) => requestRecordConfirmation({
+    title: "Delete this order history entry?", message: "The order’s current status will follow the last remaining history entry.", confirmLabel: "Delete entry", successMessage: "Order history entry deleted.",
+    onConfirm: () => setData((old) => ({ ...old, orders: old.orders.map((item) => {
       if (item.id !== order.id) return item;
       const timeline = (item.timeline || []).filter((_step, stepIndex) => stepIndex !== index);
       const latest = timeline[timeline.length - 1];
       return { ...item, timeline, status: latest ? latest.status : (old.dropdownOptions?.fulfillmentStatuses?.[0] || "Needs Packaging") };
-    }) })) },
-  ]);
+    }) })),
+  });
 
   const saveDropdownOption = (key, index, draft, selectedValue, onChange, originalValue) => {
     const value = String(draft || "").trim();
@@ -3503,17 +3539,25 @@ export default function App() {
     const options = db.dropdownOptions[key] || [];
     if (options.length <= 1) { Alert.alert("Keep one option", "Each dropdown needs at least one choice."); return false; }
     const updated = options.filter((_item, itemIndex) => itemIndex !== index);
-    setData((old) => {
-      const marketplaceFeeRules = { ...(old.marketplaceFeeRules || {}) };
-      if (key === "marketplaces") delete marketplaceFeeRules[options[index]];
-      return { ...old, dropdownOptions: { ...old.dropdownOptions, [key]: updated },
-        ...(key === "marketplaces" ? { marketplaceFeeRules } : {}),
-        ...(key === "taskPriorities" && old.defaultTaskPriority === options[index] ? { defaultTaskPriority: updated[0] } : {}),
-        ...(key === "eventTypes" && old.defaultEventType === options[index] ? { defaultEventType: updated[0] } : {}),
-      };
+    requestRecordConfirmation({
+      title: "Remove this dropdown choice?",
+      message: "“" + options[index] + "” will no longer be offered in forms. Existing records keep their saved value.",
+      confirmLabel: "Remove choice",
+      successMessage: "Dropdown choice removed. Existing records were kept.",
+      onConfirm: () => {
+        setData((old) => {
+          const marketplaceFeeRules = { ...(old.marketplaceFeeRules || {}) };
+          if (key === "marketplaces") delete marketplaceFeeRules[options[index]];
+          return { ...old, dropdownOptions: { ...old.dropdownOptions, [key]: updated },
+            ...(key === "marketplaces" ? { marketplaceFeeRules } : {}),
+            ...(key === "taskPriorities" && old.defaultTaskPriority === options[index] ? { defaultTaskPriority: updated[0] } : {}),
+            ...(key === "eventTypes" && old.defaultEventType === options[index] ? { defaultEventType: updated[0] } : {}),
+          };
+        });
+        if (onChange && Array.isArray(selectedValue)) onChange(selectedValue.filter((item) => item !== options[index]));
+        else if (onChange && options[index] === selectedValue) onChange(updated[0] || "");
+      },
     });
-    if (onChange && Array.isArray(selectedValue)) onChange(selectedValue.filter((item) => item !== options[index]));
-    else if (onChange && options[index] === selectedValue) onChange(updated[0] || "");
     return true;
   };
 
@@ -3542,13 +3586,16 @@ export default function App() {
         return true;
       }
       if (action === "delete" && supplier) {
-        Alert.alert("Remove this supplier?", "The supplier will be removed from dropdown choices. Existing component and purchase records keep the supplier name.", [
-          { text: "Cancel", style: "cancel" },
-          { text: "Remove supplier", style: "destructive", onPress: () => {
+        requestRecordConfirmation({
+          title: "Remove this supplier?",
+          message: "The supplier will be removed from dropdown choices. Existing component and purchase records keep the supplier name.",
+          confirmLabel: "Remove supplier",
+          successMessage: supplier.name + " removed from supplier choices. Existing records are kept.",
+          onConfirm: () => {
             setData((old) => ({ ...old, suppliers: old.suppliers.filter((item) => item.id !== supplier.id) }));
             if (onChange && selectedValue === supplier.name) onChange("");
-          } },
-        ]);
+          },
+        });
         return true;
       }
       return false;
@@ -3560,7 +3607,10 @@ export default function App() {
     return false;
   };
 
-  const deleteWorkPlan = (plan) => setData((old) => ({ ...old, workPlans: old.workPlans.filter((item) => item.id !== plan.id) }));
+  const deleteWorkPlan = (plan) => requestRecordConfirmation({
+    title: "Delete this work block?", message: "This removes the planned work block from your schedule.", confirmLabel: "Delete work block", successMessage: "Work block deleted from your schedule.",
+    onConfirm: () => setData((old) => ({ ...old, workPlans: (old.workPlans || []).filter((item) => item.id !== plan.id) })),
+  });
 
   const saveSettings = (key, value) => setData((old) => ({ ...old, [key]: value }));
   const saveMarketplaceFeeRule = (marketplace, field, value) => setData((old) => ({
@@ -5437,6 +5487,7 @@ export default function App() {
       <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === "ios" ? "padding" : "height"}>
         <ScrollView style={styles.mainScroll} contentContainerStyle={[styles.pageContent, wideLayout && styles.pageContentWide]} keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag">
           {storageLoadNotice ? <Pressable onPress={() => setStorageLoadNotice("")} style={styles.infoBanner}><Text style={styles.infoBannerTitle}>Saved data status</Text><Text style={styles.infoBannerText}>{storageLoadNotice} Tap to dismiss.</Text></Pressable> : null}
+          {recordActionNotice ? <View accessibilityLiveRegion="polite" style={styles.recordActionNotice}><Text style={styles.recordActionNoticeTitle}>Change applied</Text><Text style={styles.recordActionNoticeText}>{recordActionNotice}</Text></View> : null}
           {contentForScreen()}
           <View style={styles.bottomNote}><Text style={styles.bottomNoteText}>GRIMMS · Keep your business moving, one step at a time.</Text></View>
         </ScrollView>
@@ -5589,6 +5640,20 @@ export default function App() {
             </ScrollView>
           </KeyboardAvoidingView>
         </SafeAreaView>
+      </Modal>
+      <Modal visible={!!pendingRecordConfirmation} transparent animationType="fade" onRequestClose={() => setPendingRecordConfirmation(null)}>
+        <View style={styles.recordConfirmOverlay}>
+          <Pressable accessibilityRole="button" accessibilityLabel="Cancel confirmation" style={styles.recordConfirmScrim} onPress={() => setPendingRecordConfirmation(null)} />
+          <View accessibilityViewIsModal style={styles.recordConfirmCard}>
+            <Text style={styles.recordConfirmEyebrow}>PLEASE CONFIRM</Text>
+            <Text style={styles.recordConfirmTitle}>{pendingRecordConfirmation && pendingRecordConfirmation.title}</Text>
+            <Text style={styles.recordConfirmMessage}>{pendingRecordConfirmation && pendingRecordConfirmation.message}</Text>
+            <View style={styles.recordConfirmActions}>
+              <Pressable accessibilityRole="button" style={styles.recordConfirmCancel} onPress={() => setPendingRecordConfirmation(null)}><Text style={styles.recordConfirmCancelText}>Cancel</Text></Pressable>
+              <Pressable accessibilityRole="button" style={styles.recordConfirmDestructive} onPress={finishRecordConfirmation}><Text style={styles.recordConfirmDestructiveText}>{pendingRecordConfirmation && pendingRecordConfirmation.confirmLabel}</Text></Pressable>
+            </View>
+          </View>
+        </View>
       </Modal>
     </SafeAreaView>
     </ButtonSoundContext.Provider>
@@ -5773,6 +5838,20 @@ function makeStyles() { return StyleSheet.create({
   quickAddButton: { backgroundColor: COLORS.rose, borderColor: COLORS.line, borderWidth: 1, paddingHorizontal: 12, paddingVertical: 10, borderRadius: 12 },
   quickAddText: { color: COLORS.wineDark, fontSize: 11, fontWeight: "700" },
   infoBanner: { backgroundColor: COLORS.lavender, borderRadius: 15, padding: 14, marginBottom: 12 },
+  recordActionNotice: { backgroundColor: COLORS.sage, borderWidth: 1, borderColor: COLORS.green, borderRadius: 12, padding: 12, marginBottom: 10 },
+  recordActionNoticeTitle: { color: COLORS.green, fontSize: 12, fontWeight: "800" },
+  recordActionNoticeText: { color: COLORS.ink, fontSize: 11, lineHeight: 16, marginTop: 3 },
+  recordConfirmOverlay: { flex: 1, alignItems: "center", justifyContent: "center", padding: 18, backgroundColor: "rgba(26,20,22,0.48)" },
+  recordConfirmScrim: { position: "absolute", left: 0, right: 0, top: 0, bottom: 0 },
+  recordConfirmCard: { width: "100%", maxWidth: 460, backgroundColor: COLORS.paper, borderWidth: 1, borderColor: COLORS.line, borderRadius: 18, padding: 20, shadowColor: COLORS.ink, shadowOpacity: 0.18, shadowRadius: 20, shadowOffset: { width: 0, height: 8 }, elevation: 8 },
+  recordConfirmEyebrow: { color: COLORS.wine, fontSize: 9, fontWeight: "800", letterSpacing: 1.4 },
+  recordConfirmTitle: { color: COLORS.ink, fontSize: 19, lineHeight: 25, fontWeight: "800", marginTop: 7 },
+  recordConfirmMessage: { color: COLORS.muted, fontSize: 13, lineHeight: 19, marginTop: 9 },
+  recordConfirmActions: { flexDirection: "row", justifyContent: "flex-end", flexWrap: "wrap", gap: 8, marginTop: 20 },
+  recordConfirmCancel: { minHeight: 42, justifyContent: "center", paddingHorizontal: 15, borderWidth: 1, borderColor: COLORS.line, borderRadius: 10, backgroundColor: COLORS.card },
+  recordConfirmCancelText: { color: COLORS.ink, fontSize: 12, fontWeight: "700" },
+  recordConfirmDestructive: { minHeight: 42, justifyContent: "center", paddingHorizontal: 16, borderWidth: 1, borderColor: COLORS.red, borderRadius: 10, backgroundColor: COLORS.redBg },
+  recordConfirmDestructiveText: { color: COLORS.red, fontSize: 12, fontWeight: "800" },
   screenDashboardHeader: { padding: 10, marginBottom: 6 },
   screenDashboardTitle: { color: COLORS.ink, fontSize: 17, lineHeight: 21, fontWeight: "800" },
   infoBannerTitle: { color: COLORS.ink, fontSize: 13, fontWeight: "700" },
