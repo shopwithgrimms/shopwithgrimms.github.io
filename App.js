@@ -330,7 +330,7 @@ function AppIcon({ name, size = 18, color = COLORS.muted, strokeWidth = 1.8 }) {
 }
 
 const EMPTY_DB = {
-  version: 9,
+  version: 10,
   currency: "USD",
   defaultLowStock: 3,
   monthlySalesGoal: 0,
@@ -350,6 +350,7 @@ const EMPTY_DB = {
   buttonSoundsEnabled: false,
   tutorialCompleted: false,
   readAnnouncementIds: [],
+  dismissedAnnouncementIds: [],
   components: [],
   products: [],
   listings: [],
@@ -378,10 +379,17 @@ const EMPTY_DB = {
   nextOrderSku: 1,
 };
 
+const RECORD_COLLECTIONS = ["components", "products", "listings", "orders", "deletedOrders", "incomes", "reviews", "expenses", "tasks", "events", "ideas", "suppliers", "productions", "componentTransactions", "productTransactions", "purchases", "timeSessions", "timerSessions", "workPlans"];
+const DROPDOWN_ATTRIBUTE_FIELDS = { colors: "colors", materials: "materials", sizes: "sizes", genders: "gender" };
+
 const DROPDOWN_SETS = [
   { key: "componentCategories", label: "Component categories" },
   { key: "componentUnits", label: "Component units" },
   { key: "productCategories", label: "Product categories" },
+  { key: "colors", label: "Colors" },
+  { key: "materials", label: "Materials" },
+  { key: "sizes", label: "Sizes" },
+  { key: "genders", label: "Gender or audience" },
   { key: "listingStatuses", label: "Listing statuses" },
   { key: "fulfillmentStatuses", label: "Order fulfillment statuses" },
   { key: "expenseCategories", label: "Expense categories" },
@@ -397,6 +405,10 @@ const DEFAULT_DROPDOWN_OPTIONS = {
   componentCategories: ["Packaging", "Findings", "Beads", "Fabric", "Tools", "Other"],
   componentUnits: ["pieces", "pairs", "sets", "grams", "ounces", "yards", "inches", "milliliters"],
   productCategories: ["Necklace", "Earrings", "Bracelet", "Accessory", "Gift set", "Other"],
+  colors: ["Black", "White", "Ivory", "Cream", "Red", "Pink", "Orange", "Yellow", "Green", "Sage", "Blue", "Navy", "Purple", "Brown", "Tan", "Gold", "Silver", "Rose gold", "Multicolor", "Other"],
+  materials: ["Brass", "Sterling silver", "Stainless steel", "Gold-filled", "Gold-plated", "Glass", "Crystal", "Freshwater pearl", "Acrylic", "Resin", "Wood", "Cotton", "Linen", "Leather", "Wool", "Ceramic", "Polymer clay", "Other"],
+  sizes: ["One size", "XS", "S", "M", "L", "XL", "2XL", "3XL", "Petite", "Plus size", "Custom", "Other"],
+  genders: ["Women", "Men", "Unisex", "Girls", "Boys", "Kids", "Not applicable", "Other"],
   marketplaces: ["Etsy", "Shopify", "eBay", "Vinted", "Mercari", "Depop", "Poshmark", "Facebook Marketplace", "Amazon", "Amazon Handmade", "TikTok Shop", "In-person", "Direct", "Other"],
   listingStatuses: ["Draft", "Scheduled", "Active", "Paused", "Sold", "Archived"],
   fulfillmentStatuses: ["Needs Packaging", "Packaging", "Ready to Ship", "Shipped", "In Transit", "Delivered to Customer", "Awaiting Review", "Awaiting Payment", "Fulfilled"],
@@ -527,8 +539,7 @@ const withCurrentSkuCounters = (data) => {
 const normalizeDatabase = (saved) => {
   const incoming = saved && typeof saved === "object" && !Array.isArray(saved) ? saved : {};
   const source = { ...incoming };
-  const recordCollections = ["components", "products", "listings", "orders", "deletedOrders", "incomes", "reviews", "expenses", "tasks", "events", "ideas", "suppliers", "productions", "componentTransactions", "productTransactions", "purchases", "timeSessions", "timerSessions", "workPlans"];
-  recordCollections.forEach((key) => {
+  RECORD_COLLECTIONS.forEach((key) => {
     const seenIds = new Set();
     source[key] = (Array.isArray(incoming[key]) ? incoming[key] : [])
       .filter((row) => row && typeof row === "object" && !Array.isArray(row))
@@ -552,6 +563,11 @@ const normalizeDatabase = (saved) => {
     if (key === "listingStatuses") options = Array.from(new Set(options.concat(["Scheduled"])));
     dropdownOptions[key] = Array.from(new Set(options.filter((item) => typeof item === "string" && item.trim()).map((item) => item.trim())));
   });
+  source.readAnnouncementIds = Array.isArray(source.readAnnouncementIds) ? source.readAnnouncementIds.filter((id) => typeof id === "string") : [];
+  source.dismissedAnnouncementIds = Array.isArray(source.dismissedAnnouncementIds) ? source.dismissedAnnouncementIds.filter((id) => typeof id === "string") : [];
+  source.dashboardDismissedAttention = Array.isArray(source.dashboardDismissedAttention)
+    ? source.dashboardDismissedAttention.filter((entry) => entry && typeof entry === "object" && !Array.isArray(entry) && typeof entry.id === "string" && entry.id.trim())
+    : [];
   const reservedListingSkus = new Set(source.listings.map((listing) => { const product = source.products.find((item) => item.id === listing.productId); const code = String(listing.listingSku || listing.productSku || "").trim(); return code && (!product || code !== product.sku) ? code.toLowerCase() : ""; }).filter(Boolean));
   let nextMigratedListingSku = 1;
   const listings = source.listings.map((listing, index) => {
@@ -682,7 +698,7 @@ const validateTrackerDatabase = (data) => {
     componentTransactions: ["quantity"], productTransactions: ["quantity"],
   };
   const counts = {};
-  for (const key of Object.keys(EMPTY_DB).filter((name) => Array.isArray(EMPTY_DB[name]))) {
+  for (const key of RECORD_COLLECTIONS) {
     if (data[key] == null && !required.includes(key)) continue;
     if (!Array.isArray(data[key])) return { ok: false, error: `The ${key} section must be a list.` };
     const seen = new Set();
@@ -931,7 +947,7 @@ function createFormDefaults(type, record, defaultLowStock, defaults) {
   if (type === "workPlan") { base.title = "Work block"; base.date = TODAY; base.startTime = "9:00 AM"; base.endTime = "12:00 PM"; }
   const result = { ...base, ...(record || {}) };
   if (type === "order" && record && !result.listingId && record.items && record.items[0]) result.listingId = record.items[0].listingId || "";
-  if (type === "product") result.description = Array.from(new Set([record && record.description, record && record.materials, record && record.notes].map((value) => String(value || "").trim()).filter(Boolean))).join("\n\n");
+  if (type === "product") result.description = Array.from(new Set([record && record.description, record && record.notes].map((value) => String(value || "").trim()).filter(Boolean))).join("\n\n");
   return result;
 }
 
@@ -966,8 +982,10 @@ const FIELD_EXPLANATIONS = {
   price: "The amount a buyer pays for one finished item, before any order-level shipping or fees. Example: enter 28.00 if one necklace is listed for $28.",
   unitPrice: "The amount charged for one item in this sale. Quantity is multiplied by this amount to calculate the item subtotal. Example: 2 candles at $18 each gives a $36 subtotal. Leave blank to use the product’s saved price.",
   inventory: "The number of completed units ready to sell now. This is finished stock, not the amount of raw materials. Example: enter 4 if four pairs are made and available.",
-  colors: "The colors buyers will see or you want to use when identifying the item. Separate multiple colors with commas. Example: ‘navy, brass, cream.’",
-  materials: "The materials or components used in or included with the item. This is descriptive text; recipe quantities are tracked separately in the product recipe. Example: ‘Freshwater pearls, brass chain, cotton cord.’",
+  colors: "Choose one or more colors from your saved choices. Add, rename, or remove choices in Settings → Dropdown choices. Older saved color text stays visible when you edit a record.",
+  materials: "Choose the materials used in or included with the item. Manage the choices in Settings → Dropdown choices. Product recipe quantities are tracked separately.",
+  sizes: "Choose one or more sizes for this item. Add your own size labels in Settings → Dropdown choices.",
+  gender: "Optional audience or gender label. Edit the available choices in Settings → Dropdown choices, or leave this blank when it does not apply.",
   condition: "The item type or condition shown in your records, such as handmade, new, vintage, or used. Choose the option that accurately describes this item.",
   packageWeight: "The weight of the complete packed parcel, including the product, box or mailer, and packing material. Use the same unit selected below. Example: a 3 oz item plus packaging might ship at 5 oz.",
   packageWeightUnit: "The unit used for the complete parcel weight above. Choose the same unit your shipping service uses; 8 ounces equals 0.5 pounds.",
@@ -1089,7 +1107,7 @@ const FORM_INTRO = {
 const FIELD_GROUPS = [
   { title: "Start here", description: "Name the record and connect it to the right item.", keys: ["name", "title", "description", "productId", "componentId", "orderId", "customer", "contact", "website"] },
   { title: "Price, stock, and shipping", description: "Amounts help the tracker estimate stock, costs, and shipping.", keys: ["quantity", "inventory", "lowStock", "unit", "cost", "purchaseCost", "shippingCost", "price", "unitPrice", "extraFees", "packageWeight", "packageWeightUnit", "amount", "stars"] },
-  { title: "Item and sale details", description: "Add the details you will want to see while working or selling.", keys: ["category", "expenseType", "colors", "materials", "condition", "listingSku", "orderSku", "trackingNumber", "trackingCarrier", "marketplaces", "marketplace", "status", "paymentMethod", "shippingMethod", "priority", "kind", "percent", "startTime", "endTime", "date", "dueDate", "startDate", "relistDate", "endDate"] },
+  { title: "Item and sale details", description: "Add the details you will want to see while working or selling.", keys: ["category", "expenseType", "colors", "materials", "sizes", "gender", "condition", "listingSku", "orderSku", "trackingNumber", "trackingCarrier", "marketplaces", "marketplace", "status", "paymentMethod", "shippingMethod", "priority", "kind", "percent", "startTime", "endTime", "date", "dueDate", "startDate", "relistDate", "endDate"] },
   { title: "Notes and links", description: "Keep the useful context close to this record.", keys: ["notes", "reviewText", "publicResponse", "url", "trackingUrl"] },
 ];
 const groupFields = (fields) => {
@@ -1165,6 +1183,7 @@ function Field({ field, value, onChange, onManageOptions }) {
   const [optionDraft, setOptionDraft] = useState("");
   const [datePickerOpen, setDatePickerOpen] = useState(false);
   const [datePickerMonth, setDatePickerMonth] = useState(() => new Date(new Date().getFullYear(), new Date().getMonth(), 1));
+  const optionChoices = field.options || [];
   const openDatePicker = () => {
     const normalized = parseDateInput(value);
     const start = normalized ? new Date(normalized + "T12:00:00") : new Date();
@@ -1183,12 +1202,18 @@ function Field({ field, value, onChange, onManageOptions }) {
     if (!optionEdit || !onManageOptions) return;
     if (onManageOptions("save", field.optionSet, optionEdit.index, value, onChange, optionDraft, optionEdit.original)) setOptionEdit(null);
   };
-  const selectedLabels = field.multiple && Array.isArray(value)
-    ? field.options.filter((option) => value.includes(option.value)).map((option) => option.label)
+  const selectedValues = field.multiple
+    ? (Array.isArray(value) ? value : String(value || "").split(/[,\n]+/).map((item) => item.trim()).filter(Boolean))
+    : [];
+  const availableOptions = field.multiple
+    ? optionChoices.concat(selectedValues.filter((selected) => !optionChoices.some((option) => option.value === selected)).map((selected) => ({ label: selected, value: selected, currentOnly: true })))
+    : optionChoices;
+  const selectedLabels = field.multiple
+    ? availableOptions.filter((option) => selectedValues.includes(option.value)).map((option) => option.label)
     : [];
   const visibleOptions = field.searchable && optionSearch.trim()
-    ? field.options.filter((option) => String(option.label).toLowerCase().includes(optionSearch.trim().toLowerCase()))
-    : field.options;
+    ? availableOptions.filter((option) => String(option.label).toLowerCase().includes(optionSearch.trim().toLowerCase()))
+    : availableOptions;
   const toggleOption = (option) => {
     if (!field.multiple) {
       onChange(option.value);
@@ -1196,7 +1221,7 @@ function Field({ field, value, onChange, onManageOptions }) {
       setOptionSearch("");
       return;
     }
-    const selected = Array.isArray(value) ? value : [];
+    const selected = selectedValues;
     onChange(selected.includes(option.value) ? selected.filter((item) => item !== option.value) : selected.concat([option.value]));
   };
   return (
@@ -1215,8 +1240,8 @@ function Field({ field, value, onChange, onManageOptions }) {
             <View style={styles.optionList}>
               {field.searchable ? <TextInput value={optionSearch} onChangeText={setOptionSearch} placeholder={field.searchPlaceholder || "Search choices"} placeholderTextColor={COLORS.placeholder} style={styles.input} returnKeyType="search" /> : null}
               {visibleOptions.map((option) => {
-                const index = field.options.findIndex((item) => item.value === option.value);
-                return field.optionSet && onManageOptions ? (
+                const index = optionChoices.findIndex((item) => item.value === option.value);
+                return field.optionSet && onManageOptions && !option.currentOnly ? (
                 <View key={String(option.value)} style={styles.inlineOptionRow}>
                   <Pressable style={styles.inlineOptionSelect} onPress={() => toggleOption(option)}><Text style={styles.optionText}>{field.multiple ? (Array.isArray(value) && value.includes(option.value) ? "✓  " : "○  ") : ""}{option.label}</Text></Pressable>
                   <Pressable hitSlop={8} onPress={() => startOptionEdit("edit", index, option)}><Text style={styles.inlineManageText}>Edit</Text></Pressable>
@@ -1716,6 +1741,10 @@ function RecordModal({ visible, type, record, db, prefill, onClose, onSave, onMa
     component: [
       { key: "name", label: "Component name", required: true, placeholder: "Example: Gold jump rings" },
       { key: "category", label: "Category", optionSet: "componentCategories", options: optionsFor("componentCategories") },
+      { key: "colors", label: "Colors", optionSet: "colors", options: optionsFor("colors"), multiple: true, searchable: true, placeholder: "Choose colors" },
+      { key: "materials", label: "Materials", optionSet: "materials", options: optionsFor("materials"), multiple: true, searchable: true, placeholder: "Choose materials" },
+      { key: "sizes", label: "Sizes", optionSet: "sizes", options: optionsFor("sizes"), multiple: true, searchable: true, placeholder: "Choose sizes" },
+      { key: "gender", label: "Audience or gender (optional)", optionSet: "genders", options: optionsFor("genders"), allowBlank: true, placeholder: "Choose if it applies" },
       { key: "quantity", label: "Quantity on hand", number: true, required: true, placeholder: "0" },
       { key: "adjustmentNote", label: "Reason for quantity change (optional)", placeholder: "Example: counted stock and found 2 extra" },
       { key: "unit", label: "Unit", optionSet: "componentUnits", options: optionsFor("componentUnits") },
@@ -1736,7 +1765,10 @@ function RecordModal({ visible, type, record, db, prefill, onClose, onSave, onMa
     product: [
       { key: "name", label: "Product name", required: true, placeholder: "Example: Victorian lace choker" },
       { key: "category", label: "Category", optionSet: "productCategories", options: optionsFor("productCategories") },
-      { key: "colors", label: "Colors", placeholder: "Example: rose gold, ivory, sage" },
+      { key: "colors", label: "Colors", optionSet: "colors", options: optionsFor("colors"), multiple: true, searchable: true, placeholder: "Choose one or more colors" },
+      { key: "materials", label: "Materials", optionSet: "materials", options: optionsFor("materials"), multiple: true, searchable: true, placeholder: "Choose one or more materials" },
+      { key: "sizes", label: "Sizes", optionSet: "sizes", options: optionsFor("sizes"), multiple: true, searchable: true, placeholder: "Choose one or more sizes" },
+      { key: "gender", label: "Audience or gender (optional)", optionSet: "genders", options: optionsFor("genders"), allowBlank: true, placeholder: "Choose if it applies" },
       { key: "description", label: "Product description", multiline: true, placeholder: "Describe the finished item, materials, colors, and anything you want to remember" },
       { key: "condition", label: "Condition or item type", options: CONDITION_OPTIONS },
       { key: "price", label: "Selling price", number: true, required: true, placeholder: "0.00" },
@@ -1750,8 +1782,10 @@ function RecordModal({ visible, type, record, db, prefill, onClose, onSave, onMa
       { key: "marketplaces", label: "Sales channels (choose all that apply)", optionSet: "marketplaces", options: optionsFor("marketplaces"), multiple: true, required: true, placeholder: "Choose one or more channels" },
       { key: "status", label: "Status", optionSet: "listingStatuses", options: optionsFor("listingStatuses"), placeholder: "Choose status" },
       { key: "price", label: "Listing price", number: true, placeholder: "0.00" },
-      { key: "colors", label: "Colors", placeholder: "Example: rose gold, ivory, sage" },
-      { key: "materials", label: "Materials and item details", multiline: true, placeholder: "Example: freshwater pearls, brass chain, cotton ribbon" },
+      { key: "colors", label: "Colors", optionSet: "colors", options: optionsFor("colors"), multiple: true, searchable: true, placeholder: "Choose one or more colors" },
+      { key: "materials", label: "Materials", optionSet: "materials", options: optionsFor("materials"), multiple: true, searchable: true, placeholder: "Choose one or more materials" },
+      { key: "sizes", label: "Sizes", optionSet: "sizes", options: optionsFor("sizes"), multiple: true, searchable: true, placeholder: "Choose one or more sizes" },
+      { key: "gender", label: "Audience or gender (optional)", optionSet: "genders", options: optionsFor("genders"), allowBlank: true, placeholder: "Choose if it applies" },
       { key: "condition", label: "Condition or item type", options: CONDITION_OPTIONS },
       { key: "packageWeight", label: "Final packaged weight", number: true, placeholder: "Example: 4.5" },
       { key: "packageWeightUnit", label: "Package weight unit", options: WEIGHT_UNITS },
@@ -1892,6 +1926,10 @@ function RecordModal({ visible, type, record, db, prefill, onClose, onSave, onMa
     setSubmitting(true);
     const normalizedValues = { ...values };
     fields.filter((field) => field.date).forEach((field) => { normalizedValues[field.key] = parseDateInput(values[field.key]) || ""; });
+    fields.filter((field) => field.multiple && ["colors", "materials", "sizes"].includes(field.key)).forEach((field) => {
+      const selected = Array.isArray(values[field.key]) ? values[field.key] : String(values[field.key] || "").split(/[,\n]+/).map((item) => item.trim()).filter(Boolean);
+      normalizedValues[field.key] = Array.from(new Set(selected)).join(", ");
+    });
     if (type === "workPlan") {
       normalizedValues.startTime = normalizedStartTime;
       normalizedValues.endTime = normalizedEndTime;
@@ -1926,6 +1964,8 @@ function RecordModal({ visible, type, record, db, prefill, onClose, onSave, onMa
                     if (!next.listingSku) next.listingSku = selected.sku || "";
                     next.colors = selected.colors || "";
                     next.materials = selected.materials || "";
+                    next.sizes = selected.sizes || "";
+                    next.gender = selected.gender || "";
                     next.condition = selected.condition || "Handmade";
                     if (!next.price) next.price = String(selected.price || "");
                   }
@@ -2010,6 +2050,7 @@ function HelpModal({ visible, screen, onClose }) {
 }
 
 const TUTORIAL_STEPS = [
+  ["GRIMMS Business Tracker", "A practical workspace for handmade and small businesses. Keep materials, products, listings, sales, schedules, suppliers, and business finances organized in one place.", "Your saved records stay in this browser on this device. The guided tour and profile setup do not erase them. If you moved to a new phone or browser, choose Restore saved data and paste the backup text you kept."],
   ["Set up your shop profile", "Your business name, display currency, sales channels, and supplier names make the tracker match the way you work. You can change these later in Settings. The currency setting changes display only; it never converts saved amounts.", "Example: enter ‘Northside Studio,’ choose USD, add Etsy and In-person as channels, then add ‘Northside Bead Co.’ as a supplier. Keep each name consistent when recording listings and purchases."],
   ["Add supplies you actually have", "Create a Component for each raw material or supply. Enter the physical quantity, a consistent unit such as pieces or grams, your cost per unit when known, and the level that should trigger a low-stock reminder. Record new purchases with Restock so old and new quantities are combined correctly.", "Example: record 40 brass clasps on hand, unit ‘pieces,’ cost 0.18 each, and low-stock alert 10. When a pack of 100 arrives, add 100 with Restock; do not overwrite the count with 100."],
   ["Build a finished product and its recipe", "Create a Product for something ready to sell. Add the normal selling price, finished inventory, buyer-facing colors/materials, and packed parcel weight. If you want the app to track materials used during production, add each component and the amount needed for one unit to the recipe.", "Example: one bracelet uses 12 beads and 1 clasp. Set those recipe amounts, then record a production run of 3 bracelets; the tracker subtracts 36 beads and 3 clasps and adds 3 finished bracelets."],
@@ -2018,7 +2059,7 @@ const TUTORIAL_STEPS = [
   ["Review your records and protect them", "The dashboard highlights work that may need attention. Search and sort help find a record; Details shows its history. Reports and profit are estimates based on what you entered, so compare them against source statements. Export a backup regularly: this version stores unencrypted local records on this device and does not sync to an account or another device.", "Example: compare recorded monthly sales and fees with your Etsy statement, correct any missing order, then export a backup from Settings → Data and backups. Use the ? on any page for its step-by-step explanation."],
 ];
 
-function TutorialModal({ visible, onClose, onOpenSettings }) {
+function TutorialModal({ visible, onClose, onOpenSettings, onRestoreBackup }) {
   const [step, setStep] = useState(0);
   useEffect(() => { if (visible) setStep(0); }, [visible]);
   const current = TUTORIAL_STEPS[step] || TUTORIAL_STEPS[0];
@@ -2029,6 +2070,7 @@ function TutorialModal({ visible, onClose, onOpenSettings }) {
       <ScrollView contentContainerStyle={styles.formContent} keyboardShouldPersistTaps="handled">
         <View style={styles.formHero}><Text style={styles.formHeroEyebrow}>GRIMMS BUSINESS TRACKER · PRACTICAL WALKTHROUGH</Text><Text style={styles.formHeroTitle}>{current[0]}</Text><Text style={styles.formHeroText}>{current[1]}</Text></View>
         <View style={styles.helpExample}><Text style={styles.fieldLabel}>Example</Text><Text style={styles.bodyText}>{current[2]}</Text></View>
+        {step === 0 ? <View style={styles.onboardingPrivacy}><Text style={styles.fieldLabel}>Already have saved backup text?</Text><Text style={styles.bodyText}>Restore it here if you switched devices. Restoring first saves the tracker currently on this device as a recovery copy.</Text><View style={styles.actionRow}><Action label="Restore saved data" quiet onPress={onRestoreBackup} /></View></View> : null}
         <View style={styles.tutorialDots}>{TUTORIAL_STEPS.map((item, index) => <View key={item[0]} style={[styles.tutorialDot, index === step && styles.tutorialDotSelected]} />)}</View>
         <View style={styles.actionRow}>
           {step > 0 ? <Action label="Back" quiet onPress={() => setStep((value) => Math.max(0, value - 1))} /> : null}
@@ -2063,7 +2105,7 @@ function splitSetupNames(value) {
   return Array.from(new Map(names.map((name) => [name.toLocaleLowerCase(), name])).values());
 }
 
-function WelcomeSetupModal({ visible, db, onFinish, onSkip }) {
+function WelcomeSetupModal({ visible, db, onFinish, onSkip, onRestoreBackup }) {
   const animationStyle = useWelcomeEntrance(visible);
   const [businessName, setBusinessName] = useState("");
   const [currency, setCurrency] = useState("USD");
@@ -2096,12 +2138,14 @@ function WelcomeSetupModal({ visible, db, onFinish, onSkip }) {
       <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === "ios" ? "padding" : "height"}>
         <ScrollView contentContainerStyle={styles.formContent} keyboardShouldPersistTaps="handled">
           <Animated.View style={[styles.formHero, styles.onboardingHero, animationStyle]}>
-            <Text style={styles.formHeroEyebrow}>GRIMMS BUSINESS TRACKER · FIRST SETUP</Text>
-            <Text style={styles.formHeroTitle}>Let’s set up your shop</Text>
-            <Text style={styles.formHeroText}>Add a few names so your tracker starts with the channels and suppliers you actually use. You can fill in contact details and adjust every choice later in Settings.</Text>
+            <Text style={styles.formHeroEyebrow}>WELCOME · FIRST SETUP</Text>
+            <Text style={styles.formHeroTitle}>GRIMMS Business Tracker</Text>
+            <Text style={styles.formHeroText}>A business workspace for handmade shops. Organize materials, products, listings, orders, finances, suppliers, and schedules in one place. Add a few names now; you can adjust every choice later in Settings.</Text>
           </Animated.View>
           <View style={styles.formSection}>
-            <Text style={styles.formSectionTitle}>Your business profile</Text>
+            <Text style={styles.formSectionTitle}>Set up your shop</Text>
+            <Text style={styles.formSectionText}>You can skip anything and change these details later.</Text>
+            <Text style={styles.fieldLabel}>Your business profile</Text>
             <Field field={{ label: "Business name (optional)", placeholder: "Example: Northside Studio", explanation: "The shop name shown in your welcome screen and business profile. Example: ‘Northside Studio.’ This does not register a business or create a public shop page." }} value={businessName} onChange={setBusinessName} />
             <Field field={{ key: "currency", label: "Currency for displayed amounts", options: ["USD", "CAD", "GBP", "EUR", "AUD", "NZD", "MXN", "JPY", "INR"].map((code) => ({ label: code, value: code })) }} value={currency} onChange={setCurrency} />
           </View>
@@ -2124,7 +2168,7 @@ function WelcomeSetupModal({ visible, db, onFinish, onSkip }) {
             <Text style={styles.formSectionText}>Supplier names are optional for now. You can add an email, website, minimum order, and purchasing notes later in Suppliers.</Text>
             <Field field={{ label: "Supplier names (optional)", multiline: true, placeholder: "Northside Bead Co.\nLocal fabric shop", explanation: "Enter one supplier or shop name per line. These create simple entries in your supplier directory, without contact details. Example: ‘Northside Bead Co.’ Add its email, website, and ordering notes later from Suppliers." }} value={supplierNames} onChange={setSupplierNames} />
           </View>
-          <View style={styles.onboardingPrivacy}><Text style={styles.fieldLabel}>Before you begin</Text><Text style={styles.bodyText}>This version saves your tracker on this device. Setup does not create a login, connect a marketplace, or sync data to another device. Export a backup from Settings to keep a separate copy.</Text></View>
+          <View style={styles.onboardingPrivacy}><Text style={styles.fieldLabel}>Your saved data stays safe</Text><Text style={styles.bodyText}>Profile setup and the tutorial do not erase saved records. This version keeps data in this browser on this device. If you switched phones or browsers, paste your saved backup text below; before replacing anything, GRIMMS saves the current tracker as a recovery copy.</Text><View style={styles.actionRow}><Action label="Restore saved data" quiet onPress={onRestoreBackup} /></View></View>
           <Action label="Save profile and open dashboard" onPress={() => onFinish(profile(), false)} />
           <View style={styles.actionRow}><Action label="Save profile and take the guided tour" quiet onPress={() => onFinish(profile(), true)} /><Action label="Skip setup for now" quiet onPress={onSkip} /></View>
         </ScrollView>
@@ -2133,7 +2177,7 @@ function WelcomeSetupModal({ visible, db, onFinish, onSkip }) {
   </Modal>;
 }
 
-function WelcomeBackModal({ visible, db, onContinue }) {
+function WelcomeBackModal({ visible, db, onContinue, onRestoreBackup }) {
   const animationStyle = useWelcomeEntrance(visible);
   const openOrders = (db.orders || []).filter((order) => !order.refundedAt && !["Shipped", "In Transit", "Delivered to Customer", "Fulfilled"].includes(order.status)).length;
   const lowStockCount = (db.components || []).filter((item) => active(item) && Number(item.quantity) <= Number(item.lowStock)).length;
@@ -2152,6 +2196,7 @@ function WelcomeBackModal({ visible, db, onContinue }) {
           <View style={styles.welcomeBackStat}><Text style={styles.welcomeBackNumber}>{openTaskCount}</Text><Text style={styles.welcomeBackLabel}>open tasks</Text></View>
         </View>
         <Text style={styles.fieldHint}>These counts come from records saved in this tracker; they are not live marketplace updates.</Text>
+        <View style={styles.actionRow}><Action label="Restore saved data" quiet onPress={onRestoreBackup} /></View>
         <Pressable style={styles.primaryButtonFull} onPress={onContinue}><Text style={styles.primaryButtonFullText}>Continue to my dashboard</Text></Pressable>
       </Animated.View>
     </SafeAreaView>
@@ -2164,7 +2209,10 @@ function RecordDetailModal({ visible, type, record, currency, inventoryHistory =
   const weight = record.packageWeight ? record.packageWeight + " " + (record.packageWeightUnit || "oz") : "";
   const details = [
     ["SKU", record.orderSku || record.listingSku || record.sku || (record.items || []).map((item) => item.productSku).filter(Boolean).join(", ")],
-    ["Category", record.category], ["Colors", record.colors], ["Product description", record.description || record.materials], ["Condition", record.condition],
+    ["Category", record.category], ["Colors", Array.isArray(record.colors) ? record.colors.join(", ") : record.colors],
+    ["Materials", Array.isArray(record.materials) ? record.materials.join(", ") : record.materials],
+    ["Sizes", Array.isArray(record.sizes) ? record.sizes.join(", ") : record.sizes], ["Audience or gender", record.gender],
+    ["Product description", record.description || (!record.colors && !record.sizes && !record.gender ? record.materials : "")], ["Condition", record.condition],
     ["Price", record.price != null ? money(record.price, currency) : type === "order" ? money(totalOrder(record), currency) : ""],
     ["Inventory", record.inventory != null ? String(record.inventory) : ""], ["Final packaged weight", weight],
     ["Marketplace", record.marketplace || (record.marketplaces || []).join(", ")], ["Status", record.status],
@@ -2613,7 +2661,7 @@ export default function App() {
       prefill.inventory = "0";
       prefill.price = String(record.price == null ? 0 : record.price);
       prefill.recipe = (record.recipe || []).map((part) => ({ ...part, quantity: String(part.quantity) }));
-      prefill.description = Array.from(new Set([record.description, record.materials, record.notes].map((value) => String(value || "").trim()).filter(Boolean))).join("\n\n");
+      prefill.description = Array.from(new Set([record.description, record.notes].map((value) => String(value || "").trim()).filter(Boolean))).join("\n\n");
     }
     navigateToScreen(type === "component" ? "Components" : type === "listing" ? "Listings" : "Products");
     beginAdd(type, prefill);
@@ -2626,14 +2674,27 @@ export default function App() {
     return updated && updated !== old ? updated : updated || old;
   });
   const readAnnouncementIds = Array.isArray(db.readAnnouncementIds) ? db.readAnnouncementIds : [];
-  const unreadAnnouncementCount = ANNOUNCEMENTS.filter((message) => !readAnnouncementIds.includes(message.id)).length;
+  const dismissedAnnouncementIds = Array.isArray(db.dismissedAnnouncementIds) ? db.dismissedAnnouncementIds : [];
+  const visibleAnnouncements = ANNOUNCEMENTS.filter((message) => !dismissedAnnouncementIds.includes(message.id));
+  const unreadAnnouncementCount = visibleAnnouncements.filter((message) => !readAnnouncementIds.includes(message.id)).length;
   const markAnnouncementRead = (messageId) => setData((old) => ({
     ...old,
     readAnnouncementIds: Array.from(new Set((Array.isArray(old.readAnnouncementIds) ? old.readAnnouncementIds : []).concat(messageId))),
   }));
-  const markAllAnnouncementsRead = () => setData((old) => ({
+  const dismissAnnouncement = (messageId) => setData((old) => ({
     ...old,
+    dismissedAnnouncementIds: Array.from(new Set((Array.isArray(old.dismissedAnnouncementIds) ? old.dismissedAnnouncementIds : []).concat(messageId))),
+    readAnnouncementIds: Array.from(new Set((Array.isArray(old.readAnnouncementIds) ? old.readAnnouncementIds : []).concat(messageId))),
+  }));
+  const dismissAllAnnouncements = () => setData((old) => ({
+    ...old,
+    dismissedAnnouncementIds: Array.from(new Set((Array.isArray(old.dismissedAnnouncementIds) ? old.dismissedAnnouncementIds : []).concat(ANNOUNCEMENTS.map((message) => message.id)))),
     readAnnouncementIds: Array.from(new Set((Array.isArray(old.readAnnouncementIds) ? old.readAnnouncementIds : []).concat(ANNOUNCEMENTS.map((message) => message.id)))),
+  }));
+  const restoreAllAnnouncements = () => setData((old) => ({
+    ...old,
+    dismissedAnnouncementIds: [],
+    readAnnouncementIds: (Array.isArray(old.readAnnouncementIds) ? old.readAnnouncementIds : []).filter((id) => !ANNOUNCEMENTS.some((message) => message.id === id)),
   }));
   const saveSortMode = (key, value) => setData((old) => ({ ...old, sortModes: { ...(old.sortModes || {}), [key]: value } }));
   const saveRecord = (type, values, record) => {
@@ -2725,7 +2786,9 @@ export default function App() {
           id: componentId,
           name, sku, category: values.category || "Other", quantity: Math.max(0, quantity),
           unit: values.unit || "pieces", lowStock: Math.max(0, asNumber(values.lowStock, old.defaultLowStock || 3)),
-          cost: Math.max(0, cost), supplier: values.supplier || "", notes: values.notes || "", images: record && record.images || [],
+          cost: Math.max(0, cost), supplier: values.supplier || "", notes: values.notes || "",
+          colors: values.colors || "", materials: values.materials || "", sizes: values.sizes || "", gender: values.gender || "",
+          images: record && record.images || [],
           archived: record ? !!record.archived : false,
         };
         const existing = record ? old.components.find((x) => x.id === record.id) : null;
@@ -2778,7 +2841,8 @@ export default function App() {
           name: String(values.name || "").trim(), sku, category: values.category || "Other",
           price: Math.max(0, asNumber(values.price, 0)),
           inventory: startingInventory,
-          recipe: parsedRecipe, colors: values.colors || "", description: String(values.description || "").trim(), materials: String(values.description || "").trim(), condition: values.condition || "Handmade",
+          recipe: parsedRecipe, colors: values.colors || "", materials: values.materials || "", sizes: values.sizes || "", gender: values.gender || "",
+          description: String(values.description || "").trim(), condition: values.condition || "Handmade",
           packageWeight: Math.max(0, asNumber(values.packageWeight, 0)), packageWeightUnit: values.packageWeightUnit || "oz",
           notes: String(values.description || "").trim(), images: record && record.images || [], archived: record ? !!record.archived : false,
           status: record ? record.status : "Available",
@@ -2799,7 +2863,7 @@ export default function App() {
           productId: product.id, productName: product.name, productSku: product.sku, listingSku,
           marketplaces, marketplace: marketplaces.join(", "), status: listingStatus, startDate,
           price: Math.max(0, asNumber(values.price, product.price)),
-          colors: values.colors || "", materials: values.materials || "", condition: values.condition || "Handmade",
+          colors: values.colors || "", materials: values.materials || "", sizes: values.sizes || "", gender: values.gender || "", condition: values.condition || "Handmade",
           packageWeight: Math.max(0, asNumber(values.packageWeight, product.packageWeight || 0)), packageWeightUnit: values.packageWeightUnit || product.packageWeightUnit || "oz",
           discountPlans: record ? (record.discountPlans || []) : [],
           relistDate: values.relistDate || "", relistDone: record && record.relistDate === (values.relistDate || "") ? !!record.relistDone : false,
@@ -3388,6 +3452,8 @@ export default function App() {
     else updated[index] = value;
     setData((old) => {
       const renameMarketplace = key === "marketplaces" && index != null && options[index] !== value;
+      const attributeField = DROPDOWN_ATTRIBUTE_FIELDS[key];
+      const renameAttribute = !!attributeField && index != null && options[index] !== value;
       const marketplaceFeeRules = { ...(old.marketplaceFeeRules || {}) };
       if (renameMarketplace) {
         if (!marketplaceFeeRules[value]) marketplaceFeeRules[value] = marketplaceFeeRules[options[index]] || { percent: 0, fixed: 0 };
@@ -3402,9 +3468,17 @@ export default function App() {
         return { ...listing, marketplaces: channels, marketplace: channels.join(", ") };
       }) : old.listings;
       const renamedOrders = renameMarketplace ? old.orders.map((order) => order.marketplace === options[index] ? { ...order, marketplace: value } : order) : old.orders;
+      const renameSavedAttribute = (rows) => (rows || []).map((record) => {
+        const original = record[attributeField];
+        const selected = Array.isArray(original) ? original : String(original || "").split(/[,\n]+/).map((item) => item.trim()).filter(Boolean);
+        if (!selected.includes(options[index])) return record;
+        const renamed = selected.map((item) => item === options[index] ? value : item);
+        return { ...record, [attributeField]: Array.isArray(original) ? Array.from(new Set(renamed)) : Array.from(new Set(renamed)).join(", ") };
+      });
       return { ...old, dropdownOptions: { ...old.dropdownOptions, [key]: updated },
         ...(key === "marketplaces" ? { marketplaceFeeRules } : {}),
         ...(renameMarketplace ? { listings: renamedListings, orders: renamedOrders } : {}),
+        ...(renameAttribute ? { components: renameSavedAttribute(old.components), products: renameSavedAttribute(old.products), listings: renameSavedAttribute(old.listings) } : {}),
         ...(key === "taskPriorities" && index != null && old.defaultTaskPriority === options[index] ? { defaultTaskPriority: value } : {}),
         ...(key === "eventTypes" && index != null && old.defaultEventType === options[index] ? { defaultEventType: value } : {}),
       };
@@ -3550,6 +3624,13 @@ export default function App() {
     setBackupMode("restore");
     setBackupText("");
     setBackupOpen(true);
+  };
+
+  const openSavedBackupRestore = () => {
+    setTutorialOpen(false);
+    setWelcomeOpen(false);
+    setWelcomeBackOpen(false);
+    showBackup();
   };
 
   const exportBackup = async () => {
@@ -3892,6 +3973,15 @@ export default function App() {
       if (previous.some((dismissed) => dismissed.id === item.id)) return old;
       return { ...old, dashboardDismissedAttention: previous.concat([{ id: item.id, date: TODAY, item }]) };
     });
+    const dismissAllAttention = () => setData((old) => {
+      const previous = old.dashboardDismissedAttention || [];
+      const alreadyDismissed = new Set(previous.map((entry) => entry.id));
+      const nextDismissals = attentionItems.filter((item) => !alreadyDismissed.has(item.id)).map((item) => ({ id: item.id, date: TODAY, item }));
+      return nextDismissals.length ? { ...old, dashboardDismissedAttention: previous.concat(nextDismissals) } : old;
+    });
+    const restoreAllAttention = () => setData((old) => old.dashboardDismissedAttention && old.dashboardDismissedAttention.length
+      ? { ...old, dashboardDismissedAttention: [] }
+      : old);
     const widgetContent = {
       welcome: (
         <View style={styles.welcomeBox}>
@@ -3948,7 +4038,7 @@ export default function App() {
       ),
       attention: (
         <>
-          <View style={styles.sectionHeadingRow}><Text style={styles.sectionTitle}>Needs your attention</Text><Text style={styles.subtle}>{attentionItems.length} open</Text></View>
+          <View style={styles.sectionHeadingRow}><View style={styles.flex}><Text style={styles.sectionTitle}>Needs your attention</Text><Text style={styles.subtle}>{attentionItems.length} open</Text></View>{attentionItems.length ? <Action label="Dismiss all" quiet onPress={dismissAllAttention} /> : null}</View>
           {attentionItems.length === 0 ? <Card><Text style={styles.emptyTitle}>Nothing urgent right now</Text><Text style={styles.bodyText}>There are no open inventory, order, listing, or task alerts today.</Text></Card> : attentionItems.map((item) => {
             const expanded = expandedDashboardAttention.includes(item.id);
             return <Card key={item.id}><View style={styles.cardTop}><Pressable style={styles.flex} onPress={() => setExpandedDashboardAttention((old) => old.includes(item.id) ? old.filter((id) => id !== item.id) : old.concat([item.id]))}><Text style={styles.recordTitle}>{item.icon}  {item.title}</Text>{expanded ? <Text style={styles.bodyText}>{item.detail}</Text> : <Text style={styles.recordMeta}>Tap to see details</Text>}</Pressable><View style={{ alignItems: "flex-end", gap: 6 }}><Action label="Open" quiet onPress={() => navigateToScreen(item.screen)} /><Pressable onPress={() => dismissAttention(item)}><Text style={styles.deleteOptionText}>Dismiss</Text></Pressable></View></View></Card>;
@@ -3985,7 +4075,7 @@ export default function App() {
       {!hiddenWidgets.includes("welcome") ? <React.Fragment key="welcome">{widgetContent.welcome}</React.Fragment> : null}
       {widgetContent.fulfillment}
       {widgetOrder.filter((id) => id !== "welcome" && id !== "fulfillment" && !hiddenWidgets.includes(id)).map((id) => <React.Fragment key={id}>{widgetContent[id]}</React.Fragment>)}
-      <View style={styles.sectionHeadingRow}><Text style={styles.sectionTitle}>Dismissed alerts</Text><Action label={showDismissedAttention ? "Hide dismissed" : `See dismissed (${dismissedAttentionItems.length})`} quiet onPress={() => setShowDismissedAttention(!showDismissedAttention)} /></View>
+      <View style={styles.sectionHeadingRow}><Text style={styles.sectionTitle}>Dismissed alerts</Text><View style={styles.actionRow}>{dismissedAttentionItems.length ? <Action label="Restore all" quiet onPress={restoreAllAttention} /> : null}<Action label={showDismissedAttention ? "Hide dismissed" : `See dismissed (${dismissedAttentionItems.length})`} quiet onPress={() => setShowDismissedAttention(!showDismissedAttention)} /></View></View>
         {showDismissedAttention ? dismissedAttentionItems.length ? dismissedAttentionItems.map((item) => <Card key={item.dismissed.id + item.dismissed.date}><View style={styles.cardTop}><View style={styles.flex}><Text style={styles.recordTitle}>{item.item ? `${item.item.icon}  ${item.item.title}` : item.dismissed.id}</Text><Text style={styles.recordMeta}>Dismissed {dateLabel(item.dismissed.date)}</Text>{item.item ? <Text style={styles.bodyText}>{item.item.detail}</Text> : null}</View><Action label="Restore alert" onPress={() => setData((old) => ({ ...old, dashboardDismissedAttention: (old.dashboardDismissedAttention || []).filter((entry) => entry.id !== item.dismissed.id) }))} /></View></Card>) : <Text style={styles.bodyText}>There are no dismissed alerts to restore.</Text> : null}
     </>;
   };
@@ -5330,11 +5420,15 @@ export default function App() {
                 <Text style={styles.announcementTitle}>What’s new</Text>
                 <Text style={styles.announcementSubtitle}>{unreadAnnouncementCount ? unreadAnnouncementCount + " unread message" + (unreadAnnouncementCount === 1 ? "" : "s") : "You’re all caught up"}</Text>
               </View>
-              {unreadAnnouncementCount ? <Pressable accessibilityRole="button" onPress={markAllAnnouncementsRead} style={styles.announcementMarkAll}><Text style={styles.announcementMarkAllText}>Mark all read</Text></Pressable> : null}
               <Pressable accessibilityRole="button" onPress={() => setAnnouncementOpen(false)} style={styles.announcementClose}><Text style={styles.modalCancel}>Close</Text></Pressable>
             </View>
             <ScrollView style={styles.announcementList} contentContainerStyle={styles.announcementListContent}>
-              {ANNOUNCEMENTS.length ? ANNOUNCEMENTS.map((message) => {
+              <View style={styles.actionRow}>
+                {visibleAnnouncements.length ? <Action label="Dismiss all" onPress={dismissAllAnnouncements} /> : null}
+                {dismissedAnnouncementIds.length ? <Action label="Restore all" quiet onPress={restoreAllAnnouncements} /> : null}
+                {unreadAnnouncementCount ? <Action label="Mark all read" quiet onPress={() => setData((old) => ({ ...old, readAnnouncementIds: Array.from(new Set((Array.isArray(old.readAnnouncementIds) ? old.readAnnouncementIds : []).concat(visibleAnnouncements.map((message) => message.id)))) }))} /> : null}
+              </View>
+              {visibleAnnouncements.length ? visibleAnnouncements.map((message) => {
                 const isUnread = !readAnnouncementIds.includes(message.id);
                 return <View key={message.id} style={[styles.announcementMessage, isUnread && styles.announcementUnread]}>
                   <View style={styles.announcementMessageTop}>
@@ -5343,9 +5437,9 @@ export default function App() {
                   </View>
                   <Text style={styles.announcementDate}>{message.date}</Text>
                   <Text style={styles.bodyText}>{message.body}</Text>
-                  {isUnread ? <Pressable accessibilityRole="button" onPress={() => markAnnouncementRead(message.id)} style={styles.announcementReadAction}><Text style={styles.announcementMarkAllText}>Mark as read</Text></Pressable> : <Text style={styles.announcementReadLabel}>Read</Text>}
+                  <View style={styles.announcementMessageActions}>{isUnread ? <Pressable accessibilityRole="button" onPress={() => markAnnouncementRead(message.id)} style={styles.announcementReadAction}><Text style={styles.announcementMarkAllText}>Mark as read</Text></Pressable> : <Text style={styles.announcementReadLabel}>Read</Text>}<Pressable accessibilityRole="button" onPress={() => dismissAnnouncement(message.id)} style={styles.announcementReadAction}><Text style={styles.announcementMarkAllText}>Dismiss</Text></Pressable></View>
                 </View>;
-              }) : <Text style={styles.bodyText}>There are no announcements yet.</Text>}
+              }) : <Text style={styles.bodyText}>{ANNOUNCEMENTS.length ? "All messages are dismissed. Choose Restore all to bring them back." : "There are no announcements yet."}</Text>}
             </ScrollView>
             <Text style={styles.announcementFootnote}>Updates are published with the website. Your read status is saved in this browser.</Text>
           </SafeAreaView>
@@ -5354,9 +5448,9 @@ export default function App() {
       <RecordModal visible={!!modalType} type={modalType} record={editingRecord} db={db} prefill={formPrefill} onClose={closeForm} onSave={saveRecord} onManageOptions={manageDropdownFromField} />
       <ThemeChooserModal visible={themePickerOpen} currentName={db.themeName} customTheme={db.customTheme} onClose={() => setThemePickerOpen(false)} onSelect={(name) => { chooseTheme(name); setThemePickerOpen(false); }} />
       <HelpModal visible={helpOpen} screen={isFulfillmentPage ? "Orders" : screen} onClose={() => setHelpOpen(false)} />
-      <TutorialModal visible={tutorialOpen} onClose={() => finishTutorial(false)} onOpenSettings={() => finishTutorial(true)} />
-      <WelcomeSetupModal visible={welcomeOpen} db={db} onFinish={finishWelcomeSetup} onSkip={skipWelcomeSetup} />
-      <WelcomeBackModal visible={welcomeBackOpen && !welcomeOpen} db={db} onContinue={() => setWelcomeBackOpen(false)} />
+      <TutorialModal visible={tutorialOpen} onClose={() => finishTutorial(false)} onOpenSettings={() => finishTutorial(true)} onRestoreBackup={openSavedBackupRestore} />
+      <WelcomeSetupModal visible={welcomeOpen} db={db} onFinish={finishWelcomeSetup} onSkip={skipWelcomeSetup} onRestoreBackup={openSavedBackupRestore} />
+      <WelcomeBackModal visible={welcomeBackOpen && !welcomeOpen} db={db} onContinue={() => setWelcomeBackOpen(false)} onRestoreBackup={openSavedBackupRestore} />
       <RecordDetailModal visible={!!detailSelection} type={detailSelection && detailSelection.type} record={detailRecord} currency={db.currency} inventoryHistory={detailSelection && detailSelection.type === "component" ? (db.componentTransactions || []).filter((entry) => entry.componentId === detailSelection.id).slice().sort((a, b) => String(b.date || "").localeCompare(String(a.date || ""))).slice(0, 20) : detailSelection && detailSelection.type === "product" ? (db.productTransactions || []).filter((entry) => entry.productId === detailSelection.id).slice().sort((a, b) => String(b.date || "").localeCompare(String(a.date || ""))).slice(0, 20) : []} onClose={() => setDetailSelection(null)} onEdit={() => { beginEdit(detailSelection.type, detailRecord); setDetailSelection(null); }} />
       <TimeEditModal visible={!!timeEdit} mode={timeEdit && timeEdit.mode} session={timeEdit && timeEdit.session} tasks={db.tasks} onClose={() => setTimeEdit(null)} onSave={saveEditedTime} />
       <DiscountPlanModal visible={!!discountEditor} listing={discountEditor ? db.listings.find((item) => item.id === discountEditor.listingId) : null} plan={discountEditor && discountEditor.plan} onClose={() => setDiscountEditor(null)} onSave={saveDiscountPlan} />
@@ -5726,6 +5820,7 @@ function makeStyles() { return StyleSheet.create({
   announcementMessageTitle: { flex: 1, color: COLORS.ink, fontSize: 14, fontWeight: "800" },
   announcementUnreadDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: COLORS.wine },
   announcementDate: { color: COLORS.muted, fontSize: 10, marginTop: 4 },
+  announcementMessageActions: { flexDirection: "row", alignItems: "center", gap: 14, marginTop: 3 },
   announcementReadAction: { alignSelf: "flex-start", paddingTop: 8 },
   announcementReadLabel: { color: COLORS.muted, fontSize: 10, fontWeight: "700", marginTop: 8 },
   announcementFootnote: { color: COLORS.muted, fontSize: 10, lineHeight: 14, paddingHorizontal: 16, paddingVertical: 10, borderTopWidth: 1, borderTopColor: COLORS.line, backgroundColor: COLORS.card },
