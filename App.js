@@ -523,6 +523,39 @@ const nextSkuNumber = (rows, key, prefix) => {
   }, 0);
   return maximum + 1;
 };
+const firstAvailableSkuNumber = (rows, key, prefix) => {
+  const pattern = new RegExp("^" + prefix + "([0-9]+)$", "i");
+  const used = new Set((rows || []).map((row) => {
+    const match = String(row && row[key] || "").trim().match(pattern);
+    return match ? Number(match[1]) : null;
+  }).filter((number) => Number.isSafeInteger(number) && number > 0));
+  let number = 1;
+  while (used.has(number)) number += 1;
+  return number;
+};
+const productSkuReferences = (data) => [
+  ...(data.listings || []).map((item) => ({ sku: item.productSku, productId: item.productId })),
+  ...(data.orders || []).flatMap((order) => (order.items || []).map((item) => ({ sku: item.productSku, productId: item.productId }))),
+  ...(data.deletedOrders || []).flatMap((order) => (order.items || []).map((item) => ({ sku: item.productSku, productId: item.productId }))),
+  ...(data.reviews || []).map((item) => ({ sku: item.productSku || item.sku, productId: item.productId })),
+  ...(data.productions || []).map((item) => ({ sku: item.productSku, productId: item.productId })),
+].filter((item) => String(item.sku || "").trim());
+const firstAvailableProductSkuNumber = (data) => firstAvailableSkuNumber([
+  ...(data.products || []), ...productSkuReferences(data),
+], "sku", "PROD-");
+const normalizeProductSku = (value) => {
+  const sku = String(value || "").trim();
+  const match = sku.match(/^PROD-([0-9]+)$/i);
+  if (!match || Number(match[1]) < 1) return sku;
+  return "PROD-" + String(Number(match[1])).padStart(3, "0");
+};
+const attributeValues = (value) => (Array.isArray(value) ? value : String(value || "").split(/[\n,]+/))
+  .map((item) => String(item || "").trim()).filter(Boolean);
+const matchesAttributeFilter = (record, key, selected) => selected === "All" || attributeValues(record && record[key]).some((value) => value.toLowerCase() === String(selected).toLowerCase());
+const attributeFilterOptions = (rows, optionKey, fieldKey) => Array.from(new Set([
+  ...(DEFAULT_DROPDOWN_OPTIONS[optionKey] || []),
+  ...(rows || []).flatMap((record) => attributeValues(record && record[fieldKey])),
+])).sort((left, right) => left.localeCompare(right));
 const withCurrentSkuCounters = (data) => {
   const preservedCounter = (value, rows, key, prefix) => Math.max(
     Number.isFinite(Number(value)) ? Math.max(1, Math.floor(Number(value))) : 1,
@@ -531,7 +564,8 @@ const withCurrentSkuCounters = (data) => {
   return {
     ...data,
     nextComponentSku: preservedCounter(data.nextComponentSku, data.components, "sku", "COMP-"),
-    nextProductSku: preservedCounter(data.nextProductSku, data.products, "sku", "PROD-"),
+    // Product numbers are reusable only when no product record (including archived ones) owns them.
+    nextProductSku: firstAvailableProductSkuNumber(data),
     nextListingSku: preservedCounter(data.nextListingSku, data.listings, "listingSku", "LIST-"),
     nextOrderSku: preservedCounter(data.nextOrderSku, data.orders, "orderSku", "ORDER-"),
   };
@@ -926,7 +960,14 @@ function createFormDefaults(type, record, defaultLowStock, defaults) {
     base.lowStock = String(defaultLowStock == null ? 3 : defaultLowStock);
   }
   if (type === "restock") { base.quantity = "1"; base.purchaseCost = ""; base.shippingCost = ""; base.date = TODAY; }
-  if (type === "product") { base.price = ""; base.inventory = "0"; base.recipe = []; base.condition = "Handmade"; base.packageWeight = ""; base.packageWeightUnit = "oz"; }
+  if (type === "product") {
+    const skuRows = [
+      ...((defaults && defaults.products) || []),
+      ...((defaults && defaults.productSkuReferences) || []),
+    ];
+    base.sku = "PROD-" + String(firstAvailableSkuNumber(skuRows, "sku", "PROD-")).padStart(3, "0");
+    base.price = ""; base.inventory = "0"; base.recipe = []; base.condition = "Handmade"; base.packageWeight = ""; base.packageWeightUnit = "oz";
+  }
   if (type === "listing") { base.status = "Draft"; base.price = ""; base.marketplaces = []; base.startDate = ""; base.relistDate = ""; base.condition = "Handmade"; base.packageWeight = ""; base.packageWeightUnit = "oz"; }
   if (type === "order") { base.quantity = "1"; base.extraFees = "0"; base.shippingCost = "0"; base.marketplace = "Direct"; base.date = TODAY; base.packageWeight = ""; base.packageWeightUnit = "oz"; }
   if (type === "order") {
@@ -1764,6 +1805,7 @@ function RecordModal({ visible, type, record, db, prefill, onClose, onSave, onMa
     ],
     product: [
       { key: "name", label: "Product name", required: true, placeholder: "Example: Victorian lace choker" },
+      { key: "sku", label: "Product SKU", required: true, placeholder: "PROD-001", hint: "A unique code is suggested automatically. You can replace it with your own SKU." },
       { key: "category", label: "Category", optionSet: "productCategories", options: optionsFor("productCategories") },
       { key: "colors", label: "Colors", optionSet: "colors", options: optionsFor("colors"), multiple: true, searchable: true, placeholder: "Choose one or more colors" },
       { key: "materials", label: "Materials", optionSet: "materials", options: optionsFor("materials"), multiple: true, searchable: true, placeholder: "Choose one or more materials" },
@@ -1876,7 +1918,7 @@ function RecordModal({ visible, type, record, db, prefill, onClose, onSave, onMa
   };
   const fields = (fieldsByType[type] || []).filter((field) => !(type === "product" && record && field.key === "inventory"));
   const formSections = groupFields(fields);
-  const initialValuesJson = JSON.stringify({ type, record: record || null, defaultLowStock: db.defaultLowStock, defaultTaskPriority: db.defaultTaskPriority, defaultEventType: db.defaultEventType, nextListingSku: db.nextListingSku, nextOrderSku: db.nextOrderSku, prefill: prefill || null });
+  const initialValuesJson = JSON.stringify({ type, record: record || null, defaultLowStock: db.defaultLowStock, defaultTaskPriority: db.defaultTaskPriority, defaultEventType: db.defaultEventType, nextProductSku: db.nextProductSku, products: db.products, productSkuReferences: productSkuReferences(db), nextListingSku: db.nextListingSku, nextOrderSku: db.nextOrderSku, prefill: prefill || null });
   const [values, setValues] = useState(() => {
     const initial = JSON.parse(initialValuesJson);
     return { ...createFormDefaults(initial.type, initial.record, initial.defaultLowStock, initial), ...(initial.prefill || {}) };
@@ -2325,6 +2367,8 @@ export default function App() {
   const [showArchivedListings, setShowArchivedListings] = useState(false);
   const [componentCategoryFilter, setComponentCategoryFilter] = useState("All");
   const [productCategoryFilter, setProductCategoryFilter] = useState("All");
+  const [attributeFilters, setAttributeFilters] = useState({ components: {}, products: {}, listings: {} });
+  const [expandedAttributeFilters, setExpandedAttributeFilters] = useState({});
   const [listingStatusFilter, setListingStatusFilter] = useState("All");
   const [listingChannelFilter, setListingChannelFilter] = useState("All");
   const [analyticsRange, setAnalyticsRange] = useState("30 days");
@@ -2638,6 +2682,10 @@ export default function App() {
   const visibleProducts = useMemo(() => db.products.filter(active), [db.products]);
   const pageRows = (key, rows) => rows.slice(0, recordPageLimits[key] || RECORD_PAGE_SIZE);
   const showMoreRows = (key) => setRecordPageLimits((old) => ({ ...old, [key]: (old[key] || RECORD_PAGE_SIZE) + RECORD_PAGE_SIZE }));
+  const setAttributeFilter = (group, key, value) => setAttributeFilters((old) => ({ ...old, [group]: { ...(old[group] || {}), [key]: value } }));
+  const clearAttributeFilters = (group) => setAttributeFilters((old) => ({ ...old, [group]: {} }));
+  const toggleAttributeFilters = (group) => setExpandedAttributeFilters((old) => ({ ...old, [group]: !old[group] }));
+  const attributeFilterCount = (group) => Object.values(attributeFilters[group] || {}).filter((value) => value && value !== "All").length;
 
   const beginAdd = (type, prefill) => { setEditingRecord(null); setFormPrefill(prefill || null); setModalType(type); };
   const beginCreateShiftTask = () => { setShiftTaskCreationMode(true); beginAdd("task", { dueDate: db.activeShift ? db.activeShift.date : TODAY }); };
@@ -2725,10 +2773,27 @@ export default function App() {
     const newRecordId = record ? record.id : uid(type);
     const attachTaskToShift = type === "task" && !record && shiftTaskCreationMode;
     let parsedRecipe = [];
+    let productSku = "";
     let saleProduct = null;
     let saleListing = null;
     let saleQty = 0;
     if (type === "product") {
+      productSku = normalizeProductSku(values.sku);
+      if (!productSku) {
+        Alert.alert("Product SKU required", "Enter a product SKU, or keep the suggested code.");
+        return false;
+      }
+      const skuKey = productSku.toLowerCase();
+      if (db.products.some((item) => item.id !== (record && record.id) && String(item.sku || "").trim().toLowerCase() === skuKey)) {
+        Alert.alert("Product SKU already in use", "Each product needs a unique SKU. Choose a different code and save again.");
+        return false;
+      }
+      const currentProduct = record && db.products.find((item) => item.id === record.id);
+      const keepingCurrentSku = currentProduct && String(currentProduct.sku || "").trim().toLowerCase() === skuKey;
+      if (!keepingCurrentSku && productSkuReferences(db).some((item) => String(item.sku || "").trim().toLowerCase() === skuKey && (!record || item.productId !== record.id))) {
+        Alert.alert("Product SKU is reserved", "That SKU is still saved in a listing, sale, review, or production history. Use another code so those records stay connected.");
+        return false;
+      }
       parsedRecipe = (values.recipe || []).map((part) => {
         const component = db.components.find((item) => item.id === part.componentId && active(item));
         return component ? { componentId: component.id, sku: component.sku, name: component.name, quantity: asNumber(part.quantity, 0), unit: component.unit || "pieces", unitCost: Number(component.cost) || 0 } : null;
@@ -2855,10 +2920,9 @@ export default function App() {
           date: new Date().toISOString(), note: "Purchase " + purchaseId,
         }]);
       } else if (type === "product") {
-        const sku = record ? record.sku : "PROD-" + String(old.nextProductSku || 1).padStart(3, "0");
+        const sku = record ? (productSku || record.sku) : (productSku || "PROD-" + String(firstAvailableProductSkuNumber(old)).padStart(3, "0"));
         const productId = record ? record.id : uid("product");
         const startingInventory = record ? Number((old.products.find((x) => x.id === record.id) || {}).inventory) || 0 : Math.max(0, asNumber(values.inventory, 0));
-        if (isNew) next.nextProductSku = (old.nextProductSku || 1) + 1;
         update("products", {
           id: productId,
           name: String(values.name || "").trim(), sku, category: values.category || "Other",
@@ -4171,7 +4235,15 @@ export default function App() {
   const renderComponents = () => {
     const categories = Array.from(new Set(db.components.map((item) => item.category || "Other"))).sort((a, b) => a.localeCompare(b));
     const records = db.components.filter((item) => showArchivedComponents ? !active(item) : active(item));
-    const list = sortRecords(records.filter((item) => (componentCategoryFilter === "All" || (item.category || "Other") === componentCategoryFilter) && (!search || [item.name, item.sku, item.category, item.supplier, item.notes].join(" ").toLowerCase().includes(search.toLowerCase()))), db.sortModes.components);
+    const filters = attributeFilters.components || {};
+    const list = sortRecords(records.filter((item) =>
+      (componentCategoryFilter === "All" || (item.category || "Other") === componentCategoryFilter) &&
+      matchesAttributeFilter(item, "colors", filters.colors || "All") &&
+      matchesAttributeFilter(item, "materials", filters.materials || "All") &&
+      matchesAttributeFilter(item, "sizes", filters.sizes || "All") &&
+      matchesAttributeFilter(item, "gender", filters.gender || "All") &&
+      (!search || [item.name, item.sku, item.category, item.supplier, item.colors, item.materials, item.sizes, item.gender, item.notes].join(" ").toLowerCase().includes(search.toLowerCase()))
+    ), db.sortModes.components);
     const pagedComponents = pageRows("components", list);
     const history = (db.componentTransactions || []).slice().sort((a, b) => String(b.date || b.createdAt || "").localeCompare(String(a.date || a.createdAt || "")));
     const activeComponents = db.components.filter(active);
@@ -4181,6 +4253,13 @@ export default function App() {
         <View style={styles.infoBanner}><Text style={styles.infoBannerTitle}>Materials inventory</Text><Text style={styles.infoBannerText}>Component stock is shared with product recipes, production, and sales. Record purchases through Restock so your quantities and costs stay in sync.</Text><View style={styles.actionRow}><Action label="＋ Add component" onPress={() => beginAdd("component")} /><Action label="＋ Restock" quiet onPress={() => beginAdd("restock")} /></View></View>
         <View style={styles.metricGrid}><Metric label="Active components" value={String(activeComponents.length)} /><Metric label="Low or out of stock" value={String(lowStock.length)} /><Metric label="Units tracked" value={String(activeComponents.reduce((sum, item) => sum + (Number(item.quantity) || 0), 0))} /><Metric label="Stock value at cost" value={money(totalValue, db.currency)} /></View>
         <ChoiceChips label="Filter components" options={["All", ...categories]} value={componentCategoryFilter} onChange={setComponentCategoryFilter} />
+        <View style={styles.actionRow}><Action label={expandedAttributeFilters.components ? "Hide attribute filters" : "Filter by color, material, size, or audience" + (attributeFilterCount("components") ? " · " + attributeFilterCount("components") + " active" : "")} quiet onPress={() => toggleAttributeFilters("components")} />{attributeFilterCount("components") ? <Action label="Clear filters" quiet onPress={() => clearAttributeFilters("components")} /> : null}</View>
+        {expandedAttributeFilters.components ? <>
+          <ChoiceChips label="Color" options={["All", ...attributeFilterOptions(db.components, "colors", "colors")]} value={filters.colors || "All"} onChange={(value) => setAttributeFilter("components", "colors", value)} />
+          <ChoiceChips label="Material" options={["All", ...attributeFilterOptions(db.components, "materials", "materials")]} value={filters.materials || "All"} onChange={(value) => setAttributeFilter("components", "materials", value)} />
+          <ChoiceChips label="Size" options={["All", ...attributeFilterOptions(db.components, "sizes", "sizes")]} value={filters.sizes || "All"} onChange={(value) => setAttributeFilter("components", "sizes", value)} />
+          <ChoiceChips label="Audience" options={["All", ...attributeFilterOptions(db.components, "genders", "gender")]} value={filters.gender || "All"} onChange={(value) => setAttributeFilter("components", "gender", value)} />
+        </> : null}
         <View style={styles.actionRow}><Action label={showArchivedComponents ? "Show active components" : "Show archived components (" + (db.components.length - activeComponents.length) + ")"} quiet onPress={() => setShowArchivedComponents(!showArchivedComponents)} /></View>
         <SortControl value={db.sortModes.components} onChange={(value) => saveSortMode("components", value)} />
         {pagedComponents.length ? pagedComponents.map((item) => {
@@ -4213,7 +4292,15 @@ export default function App() {
     const categories = Array.from(new Set(db.products.map((item) => item.category || "Other"))).sort((a, b) => a.localeCompare(b));
     const activeProducts = db.products.filter(active);
     const records = showArchivedProducts ? db.products.filter((item) => !active(item)) : activeProducts;
-    const list = sortRecords(records.filter((item) => (productCategoryFilter === "All" || (item.category || "Other") === productCategoryFilter) && (!search || [item.name, item.sku, item.category, item.colors, item.description, item.materials, item.condition, item.notes].join(" ").toLowerCase().includes(search.toLowerCase()))), db.sortModes.products);
+    const filters = attributeFilters.products || {};
+    const list = sortRecords(records.filter((item) =>
+      (productCategoryFilter === "All" || (item.category || "Other") === productCategoryFilter) &&
+      matchesAttributeFilter(item, "colors", filters.colors || "All") &&
+      matchesAttributeFilter(item, "materials", filters.materials || "All") &&
+      matchesAttributeFilter(item, "sizes", filters.sizes || "All") &&
+      matchesAttributeFilter(item, "gender", filters.gender || "All") &&
+      (!search || [item.name, item.sku, item.category, item.colors, item.description, item.materials, item.sizes, item.gender, item.condition, item.notes].join(" ").toLowerCase().includes(search.toLowerCase()))
+    ), db.sortModes.products);
     const pagedProducts = pageRows("products", list);
     const inventoryValue = activeProducts.reduce((sum, item) => sum + (Number(item.inventory) || 0) * (Number(item.price) || 0), 0);
     return (
@@ -4221,6 +4308,13 @@ export default function App() {
         <View style={styles.infoBanner}><Text style={styles.infoBannerTitle}>Your product catalog</Text><Text style={styles.infoBannerText}>Products share finished stock with orders and listing availability. Production checks each saved recipe against component stock.</Text><View style={styles.actionRow}><Action label="＋ Add product" onPress={() => beginAdd("product")} /><Action label="＋ Make products" quiet onPress={() => navigateToScreen("Production")} /></View></View>
         <View style={styles.metricGrid}><Metric label="Active products" value={String(activeProducts.length)} /><Metric label="Finished units" value={String(activeProducts.reduce((sum, item) => sum + (Number(item.inventory) || 0), 0))} /><Metric label="Out of stock" value={String(activeProducts.filter((item) => Number(item.inventory) <= 0).length)} /><Metric label="Retail value on hand" value={money(inventoryValue, db.currency)} /></View>
         <ChoiceChips label="Filter products" options={["All", ...categories]} value={productCategoryFilter} onChange={setProductCategoryFilter} />
+        <View style={styles.actionRow}><Action label={expandedAttributeFilters.products ? "Hide attribute filters" : "Filter by color, material, size, or audience" + (attributeFilterCount("products") ? " · " + attributeFilterCount("products") + " active" : "")} quiet onPress={() => toggleAttributeFilters("products")} />{attributeFilterCount("products") ? <Action label="Clear filters" quiet onPress={() => clearAttributeFilters("products")} /> : null}</View>
+        {expandedAttributeFilters.products ? <>
+          <ChoiceChips label="Color" options={["All", ...attributeFilterOptions(db.products, "colors", "colors")]} value={filters.colors || "All"} onChange={(value) => setAttributeFilter("products", "colors", value)} />
+          <ChoiceChips label="Material" options={["All", ...attributeFilterOptions(db.products, "materials", "materials")]} value={filters.materials || "All"} onChange={(value) => setAttributeFilter("products", "materials", value)} />
+          <ChoiceChips label="Size" options={["All", ...attributeFilterOptions(db.products, "sizes", "sizes")]} value={filters.sizes || "All"} onChange={(value) => setAttributeFilter("products", "sizes", value)} />
+          <ChoiceChips label="Audience" options={["All", ...attributeFilterOptions(db.products, "genders", "gender")]} value={filters.gender || "All"} onChange={(value) => setAttributeFilter("products", "gender", value)} />
+        </> : null}
         <View style={styles.actionRow}><Action label={showArchivedProducts ? "Show active products" : "Show archived products (" + (db.products.length - activeProducts.length) + ")"} quiet onPress={() => setShowArchivedProducts(!showArchivedProducts)} /></View>
         <SortControl value={db.sortModes.products} onChange={(value) => saveSortMode("products", value)} />
         {pagedProducts.length ? pagedProducts.map((item) => {
@@ -4276,10 +4370,19 @@ export default function App() {
   const renderListings = () => {
     const activeListings = db.listings.filter(active);
     const source = showArchivedListings ? db.listings.filter((item) => !active(item)) : activeListings;
+    const filters = attributeFilters.listings || {};
+    const matchesListingAttribute = (item, key, selected) => {
+      const product = db.products.find((row) => row.id === item.productId);
+      return matchesAttributeFilter({ [key]: item[key] || (product && product[key]) || "" }, key, selected);
+    };
     const list = sortRecords(
       source.filter((item) =>
         (listingStatusFilter === "All" || item.status === listingStatusFilter) &&
         (listingChannelFilter === "All" || (item.marketplaces || (item.marketplace ? String(item.marketplace).split(",").map((channel) => channel.trim()) : [])).includes(listingChannelFilter)) &&
+        matchesListingAttribute(item, "colors", filters.colors || "All") &&
+        matchesListingAttribute(item, "materials", filters.materials || "All") &&
+        matchesListingAttribute(item, "sizes", filters.sizes || "All") &&
+        matchesListingAttribute(item, "gender", filters.gender || "All") &&
         (!search || [item.productName, item.productSku, item.listingSku, ...(item.marketplaces || (item.marketplace ? [item.marketplace] : [])), item.status, item.startDate, item.colors, item.materials, item.condition, item.notes, ...(item.discountPlans || []).flatMap((plan) => [plan.percent, plan.startDate, plan.endDate, plan.notes])].join(" ").toLowerCase().includes(search.toLowerCase()))
       ),
       db.sortModes.listings
@@ -4318,6 +4421,13 @@ export default function App() {
          <ChoiceChips label="Listings" options={[{ label: `Active · ${activeListings.length}`, value: false }, { label: `Archived · ${db.listings.length - activeListings.length}`, value: true }]} value={showArchivedListings} onChange={(showArchived) => { setShowArchivedListings(showArchived); setListingStatusFilter("All"); setListingChannelFilter("All"); }} />
          <ChoiceChips label="Listing status" options={["All", ...Array.from(new Set(source.map((item) => item.status || "Draft"))).sort()]} value={listingStatusFilter} onChange={setListingStatusFilter} />
          <ChoiceChips label="Sales channel" options={["All", ...Array.from(new Set(source.flatMap((item) => item.marketplaces || (item.marketplace ? String(item.marketplace).split(",").map((channel) => channel.trim()) : [])))).filter(Boolean).sort()]} value={listingChannelFilter} onChange={setListingChannelFilter} />
+         <View style={styles.actionRow}><Action label={expandedAttributeFilters.listings ? "Hide attribute filters" : "Filter by color, material, size, or audience" + (attributeFilterCount("listings") ? " · " + attributeFilterCount("listings") + " active" : "")} quiet onPress={() => toggleAttributeFilters("listings")} />{attributeFilterCount("listings") ? <Action label="Clear filters" quiet onPress={() => clearAttributeFilters("listings")} /> : null}</View>
+         {expandedAttributeFilters.listings ? <>
+           <ChoiceChips label="Color" options={["All", ...attributeFilterOptions([...db.listings, ...db.products], "colors", "colors")]} value={filters.colors || "All"} onChange={(value) => setAttributeFilter("listings", "colors", value)} />
+           <ChoiceChips label="Material" options={["All", ...attributeFilterOptions([...db.listings, ...db.products], "materials", "materials")]} value={filters.materials || "All"} onChange={(value) => setAttributeFilter("listings", "materials", value)} />
+           <ChoiceChips label="Size" options={["All", ...attributeFilterOptions([...db.listings, ...db.products], "sizes", "sizes")]} value={filters.sizes || "All"} onChange={(value) => setAttributeFilter("listings", "sizes", value)} />
+           <ChoiceChips label="Audience" options={["All", ...attributeFilterOptions([...db.listings, ...db.products], "genders", "gender")]} value={filters.gender || "All"} onChange={(value) => setAttributeFilter("listings", "gender", value)} />
+         </> : null}
          <SortControl value={db.sortModes.listings} onChange={(value) => saveSortMode("listings", value)} />
         {plans.length ? <>
           <View style={styles.sectionHeadingRow}><Text style={styles.sectionTitle}>Promotion &amp; relisting calendar</Text><Text style={styles.subtle}>{plans.length} upcoming</Text></View>
