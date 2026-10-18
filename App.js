@@ -221,6 +221,7 @@ const DASHBOARD_WIDGETS = [
   { id: "time", label: "Today’s time", description: "Today’s hours and clock status" },
   { id: "attention", label: "Needs your attention", description: "Low stock, open orders, and overdue tasks" },
   { id: "snapshot", label: "Business snapshot", description: "Quick counts for products, materials, orders, and tasks" },
+  { id: "connections", label: "Product and material connections", description: "See which materials are used by finished products and which products have active listings" },
   { id: "quickAdd", label: "Quick add", description: "Shortcuts for common records" },
 ];
 const DEFAULT_DASHBOARD_WIDGET_ORDER = DASHBOARD_WIDGETS.map((widget) => widget.id);
@@ -2721,7 +2722,7 @@ export default function App() {
     beginAdd(type, prefill);
   };
   const openDetails = (type, record) => setDetailSelection({ type, id: record.id, record });
-  const toggleOrderExpanded = (orderId) => setExpandedOrderIds((old) => old.includes(orderId) ? old.filter((id) => id !== orderId) : old.concat(orderId));
+  const toggleOrderExpanded = (orderId) => setExpandedOrderIds((old) => old.includes(orderId) ? [] : [orderId]);
   const closeForm = () => { setModalType(""); setEditingRecord(null); setFormPrefill(null); setShiftTaskCreationMode(false); };
   const setData = (recipe) => setDb((old) => {
     const updated = recipe(old);
@@ -2774,6 +2775,7 @@ export default function App() {
     const attachTaskToShift = type === "task" && !record && shiftTaskCreationMode;
     let parsedRecipe = [];
     let productSku = "";
+    let recipeInventoryAdjustments = [];
     let saleProduct = null;
     let saleListing = null;
     let saleQty = 0;
@@ -2805,15 +2807,34 @@ export default function App() {
         combinedRecipe.set(part.componentId, existing ? { ...existing, quantity: existing.quantity + part.quantity } : part);
       });
       parsedRecipe = Array.from(combinedRecipe.values());
-      const previousRecipe = record ? (db.products.find((item) => item.id === record.id) || {}).recipe || [] : [];
-      const recipeShortage = parsedRecipe.find((part) => {
-        const previousQuantity = previousRecipe.filter((item) => item.componentId === part.componentId).reduce((sum, item) => sum + (Number(item.quantity) || 0), 0);
-        const component = db.components.find((item) => item.id === part.componentId && active(item));
-        return component && part.quantity !== previousQuantity && part.quantity > (Number(component.quantity) || 0);
+      const existingProduct = record ? db.products.find((item) => item.id === record.id) : null;
+      const inventoryBeingTracked = existingProduct
+        ? (active(existingProduct) ? Math.max(0, Number(existingProduct.inventory) || 0) : 0)
+        : Math.max(0, asNumber(values.inventory, 0));
+      const materialNeedsFor = (recipe) => {
+        const needs = new Map();
+        (recipe || []).forEach((part) => needs.set(part.componentId, (needs.get(part.componentId) || 0) + Math.max(0, Number(part.quantity) || 0) * inventoryBeingTracked));
+        return needs;
+      };
+      const previousNeeds = materialNeedsFor(existingProduct && active(existingProduct) ? existingProduct.recipe : []);
+      const nextNeeds = materialNeedsFor(parsedRecipe);
+      const componentIds = new Set([...previousNeeds.keys(), ...nextNeeds.keys()]);
+      recipeInventoryAdjustments = Array.from(componentIds).map((componentId) => ({
+        componentId,
+        quantity: (nextNeeds.get(componentId) || 0) - (previousNeeds.get(componentId) || 0),
+        component: db.components.find((item) => item.id === componentId) || null,
+      })).filter((adjustment) => Math.abs(adjustment.quantity) > 0.0000001);
+      const materialShortage = recipeInventoryAdjustments.find((adjustment) => {
+        if (adjustment.quantity <= 0) return false;
+        const component = adjustment.component && active(adjustment.component) ? adjustment.component : null;
+        const available = Number(component && component.quantity);
+        return !component || !Number.isFinite(available) || available < adjustment.quantity;
       });
-      if (recipeShortage) {
-        const component = db.components.find((item) => item.id === recipeShortage.componentId);
-        Alert.alert("Not enough component stock for this recipe", "Each finished " + String(values.name || "product").trim() + " uses " + recipeShortage.quantity + " " + recipeShortage.unit + " of " + recipeShortage.name + ", but only " + (Number(component && component.quantity) || 0) + " " + recipeShortage.unit + " are in stock. Reduce the recipe amount or restock this component first.");
+      if (materialShortage) {
+        const availableComponent = materialShortage.component && active(materialShortage.component) ? materialShortage.component : null;
+        const componentName = availableComponent ? availableComponent.name : "a required component";
+        const available = Number(availableComponent && availableComponent.quantity) || 0;
+        Alert.alert("Not enough materials for finished stock", "This recipe change needs " + materialShortage.quantity + " more " + (availableComponent && availableComponent.unit || "units") + " of " + componentName + " for the " + inventoryBeingTracked + " finished product units you already have. Only " + available + " are available. Restock the component before changing this recipe.");
         return false;
       }
     }
@@ -2934,6 +2955,17 @@ export default function App() {
           notes: String(values.description || "").trim(), images: record && record.images || [], archived: record ? !!record.archived : false,
           status: record ? record.status : "Available",
         });
+        if (recipeInventoryAdjustments.length) {
+          next.components = old.components.map((component) => {
+            const adjustment = recipeInventoryAdjustments.find((entry) => entry.componentId === component.id);
+            return adjustment ? { ...component, quantity: Math.max(0, (Number(component.quantity) || 0) - adjustment.quantity) } : component;
+          });
+          next.componentTransactions = (old.componentTransactions || []).concat(recipeInventoryAdjustments.map((adjustment) => ({
+            id: uid("recipe-stock"), componentId: adjustment.componentId, productId, quantity: -adjustment.quantity,
+            kind: adjustment.quantity > 0 ? (isNew ? "Starting finished inventory materials" : "Materials used for recipe change") : "Materials returned after recipe change",
+            date: new Date().toISOString(), note: Math.abs(adjustment.quantity) + " " + (adjustment.component && adjustment.component.unit || "units") + " for " + (inventoryBeingTracked || 0) + " finished " + String(values.name || record && record.name || "product").trim() + " units",
+          })));
+        }
         if (isNew && startingInventory > 0) next.productTransactions = (old.productTransactions || []).concat([{
           id: uid("opening"), productId, quantity: startingInventory, kind: "Opening balance", date: new Date().toISOString(), note: "Starting finished inventory",
         }]);
@@ -3192,6 +3224,7 @@ export default function App() {
     const references = key === "products" ? [
       db.listings.some((item) => item.productId === record.id) && "marketplace listings",
       db.orders.some((order) => (order.items || []).some((item) => item.productId === record.id)) && "sale history",
+      (db.deletedOrders || []).some((order) => (order.items || []).some((item) => item.productId === record.id)) && "deleted sale audit history",
       db.reviews.some((review) => review.productId === record.id) && "buyer reviews",
       db.productions.some((batch) => batch.productId === record.id) && "production batches",
     ].filter(Boolean) : key === "components" ? (() => {
@@ -3216,24 +3249,58 @@ export default function App() {
       });
       return;
     }
+    const productToDelete = key === "products" ? db.products.find((item) => item.id === record.id) : null;
+    const productUnitsToReturn = productToDelete && active(productToDelete) ? Math.max(0, Number(productToDelete.inventory) || 0) : 0;
+    const deleteMessage = key === "products" && productUnitsToReturn > 0
+      ? "This permanently deletes the unlinked product and returns the ingredients for its " + productUnitsToReturn + " unsold finished unit" + (productUnitsToReturn === 1 ? "" : "s") + " to component stock."
+      : key === "products" && productToDelete && !active(productToDelete)
+        ? "This permanently deletes the archived product. Its components were already returned when it was archived, so they will not be returned twice."
+        : "This removes the record from this device and cannot be undone. Archived records can be restored until you delete them.";
     requestRecordConfirmation({
       title: "Permanently delete this " + label.toLowerCase() + "?",
-      message: "This removes the record from this device and cannot be undone. Archived records can be restored until you delete them.",
+      message: deleteMessage,
       confirmLabel: "Delete permanently",
-      successMessage: label + " deleted from this browser.",
-      onConfirm: () => setData((old) => ({
-        ...old,
-        [key]: (old[key] || []).filter((item) => item.id !== record.id),
-        ...(key === "components" ? {
-          componentTransactions: (old.componentTransactions || []).filter((entry) => {
-            const referenceSku = String(entry.componentSku || entry.sku || "").trim();
-            const matchesComponent = referenceSku
-              ? referenceSku.toLowerCase() === String(record.sku || "").trim().toLowerCase()
-              : entry.componentId === record.id;
-            return !(entry.kind === "Opening balance" && matchesComponent);
-          }),
-        } : {}),
-      })),
+      successMessage: key === "products"
+        ? "Product deleted. Ingredients from any remaining unsold finished stock were returned to component inventory."
+        : label + " deleted from this browser.",
+      onConfirm: () => setData((old) => {
+        const next = {
+          ...old,
+          [key]: (old[key] || []).filter((item) => item.id !== record.id),
+          ...(key === "components" ? {
+            componentTransactions: (old.componentTransactions || []).filter((entry) => {
+              const referenceSku = String(entry.componentSku || entry.sku || "").trim();
+              const matchesComponent = referenceSku
+                ? referenceSku.toLowerCase() === String(record.sku || "").trim().toLowerCase()
+                : entry.componentId === record.id;
+              return !(entry.kind === "Opening balance" && matchesComponent);
+            }),
+          } : {}),
+        };
+        if (key !== "products") return next;
+        const product = old.products.find((item) => item.id === record.id);
+        if (!product || !active(product)) return withCurrentSkuCounters(next);
+        const units = Math.max(0, Number(product.inventory) || 0);
+        const returnedByComponent = {};
+        (product.recipe || []).forEach((part) => {
+          const quantity = Math.max(0, Number(part.quantity) || 0) * units;
+          if (part.componentId && quantity > 0) returnedByComponent[part.componentId] = (returnedByComponent[part.componentId] || 0) + quantity;
+        });
+        const now = new Date().toISOString();
+        next.components = old.components.map((component) => returnedByComponent[component.id]
+          ? { ...component, quantity: (Number(component.quantity) || 0) + returnedByComponent[component.id] }
+          : component);
+        next.componentTransactions = (old.componentTransactions || []).concat(Object.entries(returnedByComponent).map(([componentId, quantity]) => ({
+          id: uid("product-delete-return"), componentId, quantity, productId: product.id,
+          kind: "Materials returned from deleted product", date: now,
+          note: units + " unsold " + product.name + " units removed",
+        })));
+        if (units > 0) next.productTransactions = (old.productTransactions || []).concat([{
+          id: uid("product-delete"), productId: product.id, quantity: -units,
+          kind: "Product deleted", date: now, note: "Remaining finished inventory removed with product",
+        }]);
+        return withCurrentSkuCounters(next);
+      }),
     });
   };
 
@@ -3264,9 +3331,15 @@ export default function App() {
         : { ...part, unitCost: Number(component ? component.cost : part.unitCost) || 0, required });
     });
     const requirements = Array.from(requirementsByComponent.values());
+    const invalidRequirement = requirements.find((part) => !Number.isFinite(part.required) || part.required <= 0);
+    if (invalidRequirement) {
+      Alert.alert("Check the product recipe", "The recipe has an invalid component amount. Edit the product recipe so every material amount is greater than zero before making this batch.");
+      return;
+    }
     const unavailable = requirements.find((part) => {
       const component = db.components.find((item) => item.id === part.componentId && active(item));
-      return !component || Number(component.quantity) < part.required;
+      const available = Number(component && component.quantity);
+      return !component || !Number.isFinite(available) || available < part.required;
     });
     if (unavailable) {
       const component = db.components.find((item) => item.id === unavailable.componentId);
@@ -4094,6 +4167,28 @@ export default function App() {
     const shippedOrders = db.orders.filter((order) => !order.archived && !order.refundedAt && order.status === "Shipped").length;
     const todayTasks = openTasks.filter((task) => task.dueDate === TODAY).length;
     const activeListings = db.listings.filter((item) => active(item));
+    const activeProducts = db.products.filter(active);
+    const activeListingsByProduct = new Map();
+    activeListings.forEach((listing) => activeListingsByProduct.set(listing.productId, (activeListingsByProduct.get(listing.productId) || 0) + 1));
+    const productsWithListings = activeProducts.filter((product) => activeListingsByProduct.has(product.id));
+    const recipeComponentIds = new Set(activeProducts.flatMap((product) => (product.recipe || []).map((part) => part.componentId).filter(Boolean)));
+    const finishedProductMaterials = new Map();
+    activeProducts.forEach((product) => {
+      const inventory = Math.max(0, Number(product.inventory) || 0);
+      if (!inventory) return;
+      (product.recipe || []).forEach((part) => {
+        const quantity = inventory * Math.max(0, Number(part.quantity) || 0);
+        if (!quantity) return;
+        const current = finishedProductMaterials.get(part.componentId) || { quantity: 0, productNames: new Set() };
+        current.quantity += quantity;
+        current.productNames.add(product.name);
+        finishedProductMaterials.set(part.componentId, current);
+      });
+    });
+    const finishedProductMaterialRows = Array.from(finishedProductMaterials.entries()).map(([componentId, usage]) => ({
+      component: db.components.find((item) => item.id === componentId) || null,
+      componentId, ...usage,
+    })).sort((left, right) => String(left.component && left.component.name || "Missing component").localeCompare(String(right.component && right.component.name || "Missing component")));
     const soldListingsNeedArchive = activeListings.filter((item) => item.needsArchive);
     const shopReviews = db.reviews || [];
     const averageStars = shopReviews.length ? (shopReviews.reduce((sum, item) => sum + (Number(item.stars) || 0), 0) / shopReviews.length).toFixed(1) : "—";
@@ -4194,7 +4289,7 @@ export default function App() {
           <View style={styles.sectionHeadingRow}><View style={styles.flex}><Text style={styles.sectionTitle}>Needs your attention</Text><Text style={styles.subtle}>{attentionItems.length} open</Text></View>{attentionItems.length ? <Action label="Dismiss all" quiet onPress={dismissAllAttention} /> : null}</View>
           {attentionItems.length === 0 ? <Card><Text style={styles.emptyTitle}>Nothing urgent right now</Text><Text style={styles.bodyText}>There are no open inventory, order, listing, or task alerts today.</Text></Card> : attentionItems.map((item) => {
             const expanded = expandedDashboardAttention.includes(item.id);
-            return <Card key={item.id}><View style={styles.cardTop}><Pressable style={styles.flex} onPress={() => setExpandedDashboardAttention((old) => old.includes(item.id) ? old.filter((id) => id !== item.id) : old.concat([item.id]))}><Text style={styles.recordTitle}>{item.icon}  {item.title}</Text>{expanded ? <Text style={styles.bodyText}>{item.detail}</Text> : <Text style={styles.recordMeta}>Tap to see details</Text>}</Pressable><View style={{ alignItems: "flex-end", gap: 6 }}><Action label="Open" quiet onPress={() => navigateToScreen(item.screen)} /><Pressable onPress={() => dismissAttention(item)}><Text style={styles.deleteOptionText}>Dismiss</Text></Pressable></View></View></Card>;
+            return <Card key={item.id}><View style={styles.cardTop}><Pressable style={styles.flex} onPress={() => setExpandedDashboardAttention((old) => old.includes(item.id) ? [] : [item.id])}><Text style={styles.recordTitle}>{item.icon}  {item.title}</Text>{expanded ? <Text style={styles.bodyText}>{item.detail}</Text> : <Text style={styles.recordMeta}>Tap to see details</Text>}</Pressable><View style={{ alignItems: "flex-end", gap: 6 }}><Action label="Open" quiet onPress={() => navigateToScreen(item.screen)} /><Pressable onPress={() => dismissAttention(item)}><Text style={styles.deleteOptionText}>Dismiss</Text></Pressable></View></View></Card>;
           })}
         </>
       ),
@@ -4209,6 +4304,25 @@ export default function App() {
             <Pressable android_ripple={{ color: COLORS.ripple }} onPress={() => navigateToScreen("Reviews")} style={({ pressed }) => [styles.summaryTile, pressed && styles.pressedState]}><Text style={styles.summaryNumber}>{averageStars}</Text><Text style={styles.summaryLabel}>Shop rating</Text><Text style={styles.summarySub}>{shopReviews.length} reviews saved</Text></Pressable>
             <Pressable android_ripple={{ color: COLORS.ripple }} onPress={() => navigateToScreen("Calendar")} style={({ pressed }) => [styles.summaryTile, pressed && styles.pressedState]}><Text style={styles.summaryNumber}>{openTasks.length}</Text><Text style={styles.summaryLabel}>Open tasks</Text><Text style={styles.summarySub}>{overdueTasks.length} overdue</Text></Pressable>
           </View>
+        </>
+      ),
+      connections: (
+        <>
+          <View style={styles.sectionHeadingRow}><Text style={styles.sectionTitle}>Products, materials &amp; listings</Text><Text style={styles.subtle}>Connected inventory</Text></View>
+          <View style={styles.metricGrid}>
+            <Metric label="Components in active recipes" value={String(recipeComponentIds.size)} sub={activeProducts.filter((product) => (product.recipe || []).length > 0).length + " products use materials"} />
+            <Metric label="Products with active listings" value={String(productsWithListings.length)} sub={activeListings.length + " active listings across " + productsWithListings.length + " products"} />
+          </View>
+          <Card>
+            <Text style={styles.cardTitle}>Materials in finished inventory</Text>
+            <Text style={styles.fieldHint}>Estimated from active product recipes and finished stock. These ingredient amounts are represented by unsold products; archiving or deleting an unlinked product returns the materials for its remaining units.</Text>
+            {finishedProductMaterialRows.length ? finishedProductMaterialRows.map((row) => <View key={row.componentId} style={styles.detailLine}><View style={styles.flex}><Text style={styles.detailLabel}>{row.component ? row.component.name : "Missing component"}</Text><Text style={styles.fieldHint}>{Array.from(row.productNames).join(", ")}</Text></View><Text style={styles.detailValue}>{row.quantity} {row.component && row.component.unit || "units"}</Text></View>) : <Text style={styles.bodyText}>No materials are currently built into finished product inventory.</Text>}
+          </Card>
+          <Card>
+            <Text style={styles.cardTitle}>Products represented by active listings</Text>
+            {productsWithListings.length ? productsWithListings.slice(0, 10).map((product) => <Pressable key={product.id} onPress={() => navigateToScreen("Listings")} style={styles.detailLine}><View style={styles.flex}><Text style={styles.detailLabel}>{product.name}</Text><Text style={styles.fieldHint}>{product.sku || "No SKU"} · {product.inventory || 0} finished units</Text></View><Text style={styles.detailValue}>{activeListingsByProduct.get(product.id)} listing{activeListingsByProduct.get(product.id) === 1 ? "" : "s"}</Text></Pressable>) : <Text style={styles.bodyText}>No active products are linked to an active listing. Create or restore a listing to connect them.</Text>}
+            {productsWithListings.length > 10 ? <Text style={styles.fieldHint}>Showing 10 of {productsWithListings.length} linked products.</Text> : null}
+          </Card>
         </>
       ),
       quickAdd: (
@@ -4235,6 +4349,10 @@ export default function App() {
   const renderComponents = () => {
     const categories = Array.from(new Set(db.components.map((item) => item.category || "Other"))).sort((a, b) => a.localeCompare(b));
     const records = db.components.filter((item) => showArchivedComponents ? !active(item) : active(item));
+    const productsUsingComponent = (component) => db.products.filter(active).map((product) => ({
+      product,
+      parts: (product.recipe || []).filter((part) => part.componentId === component.id || (!part.componentId && String(part.sku || "").trim().toLowerCase() === String(component.sku || "").trim().toLowerCase())),
+    })).filter((entry) => entry.parts.length);
     const filters = attributeFilters.components || {};
     const list = sortRecords(records.filter((item) =>
       (componentCategoryFilter === "All" || (item.category || "Other") === componentCategoryFilter) &&
@@ -4265,14 +4383,16 @@ export default function App() {
         {pagedComponents.length ? pagedComponents.map((item) => {
           const low = Number(item.quantity) <= Number(item.lowStock);
           const expanded = expandedComponentIds.includes(item.id);
-          const toggleExpanded = () => setExpandedComponentIds((old) => old.includes(item.id) ? old.filter((id) => id !== item.id) : old.concat([item.id]));
+          const usingProducts = productsUsingComponent(item);
+          const toggleExpanded = () => setExpandedComponentIds((old) => old.includes(item.id) ? [] : [item.id]);
           return (
             <Card key={item.id} style={styles.compactComponentCard}>
-              <View style={styles.cardTop}><View style={styles.flex}><Text style={styles.recordTitle} numberOfLines={2}>{item.name}</Text><Text style={styles.recordMeta}>{item.sku} · {item.category || "Other"} · {item.quantity} {item.unit || "pieces"} on hand</Text><Text style={styles.recordMeta}>{money(item.cost, db.currency)} per unit · {money((Number(item.quantity) || 0) * (Number(item.cost) || 0), db.currency)} stock value</Text></View><Pill text={item.archived ? "Archived" : Number(item.quantity) <= 0 ? "Out of stock" : low ? "Low stock" : "In stock"} tone={item.archived ? "neutral" : Number(item.quantity) <= 0 ? "red" : low ? "amber" : "green"} /></View>
+              <View style={styles.cardTop}><View style={styles.flex}><Text style={styles.recordTitle} numberOfLines={2}>{item.name}</Text><Text style={styles.recordMeta}>{item.sku} · {item.category || "Other"} · {item.quantity} {item.unit || "pieces"} on hand</Text><Text style={styles.recordMeta}>{money(item.cost, db.currency)} per unit · {money((Number(item.quantity) || 0) * (Number(item.cost) || 0), db.currency)} stock value</Text><Text style={styles.recordMeta}>Used in {usingProducts.length} active product recipe{usingProducts.length === 1 ? "" : "s"}</Text></View><Pill text={item.archived ? "Archived" : Number(item.quantity) <= 0 ? "Out of stock" : low ? "Low stock" : "In stock"} tone={item.archived ? "neutral" : Number(item.quantity) <= 0 ? "red" : low ? "amber" : "green"} /></View>
               <View style={styles.componentCardActions}><Action label={expanded ? "Hide details" : "Details"} quiet onPress={toggleExpanded} />{expanded && !item.archived ? <Action label="Restock" onPress={() => beginAdd("restock", { componentId: item.id })} /> : null}<Action label="Duplicate" quiet onPress={() => duplicateRecord("component", item)} /><Action label="Edit" quiet onPress={() => beginEdit("component", { ...item, cost: String(item.cost), quantity: String(item.quantity), lowStock: String(item.lowStock) })} /></View>
               {expanded ? <>
                 <View style={styles.detailLine}><Text style={styles.detailLabel}>Low-stock alert</Text><Text style={styles.detailValue}>{item.lowStock} {item.unit || "pieces"}</Text></View>
                 <View style={styles.detailLine}><Text style={styles.detailLabel}>Supplier</Text><Text style={styles.detailValue}>{item.supplier || "Not saved"}</Text></View>
+                {usingProducts.length ? <View style={styles.recipePreview}><Text style={styles.fieldLabel}>Products using this component</Text>{usingProducts.map(({ product, parts }) => <Text key={product.id} style={styles.bodyText}>{product.name} · {parts.map((part) => (Number(part.quantity) || 0) + " " + (part.unit || item.unit || "pieces") + " per finished unit").join(", ")} · {Number(product.inventory) || 0} finished in stock</Text>)}</View> : <Text style={styles.fieldHint}>No active product recipe uses this component.</Text>}
                 {item.notes ? <Text style={styles.bodyText}>{item.notes}</Text> : null}
                 {item.archived ? <Action label="Restore component" onPress={() => restoreRecord("components", item)} /> : <View style={styles.actionRow}><Action label="Archive" quiet onPress={() => archiveRecord("components", item, "component")} /><Action label="Delete" quiet onPress={() => permanentlyDeleteRecord("components", item, "component")} /></View>}
               </> : null}
@@ -4319,15 +4439,18 @@ export default function App() {
         <SortControl value={db.sortModes.products} onChange={(value) => saveSortMode("products", value)} />
         {pagedProducts.length ? pagedProducts.map((item) => {
           const recipes = item.recipe || [];
+          const productListings = db.listings.filter((listing) => listing.productId === item.id);
+          const activeProductListings = productListings.filter(active);
           const expanded = expandedProductIds.includes(item.id);
-          const toggleExpanded = () => setExpandedProductIds((old) => old.includes(item.id) ? old.filter((id) => id !== item.id) : old.concat([item.id]));
+          const toggleExpanded = () => setExpandedProductIds((old) => old.includes(item.id) ? [] : [item.id]);
           return (
             <Card key={item.id}>
-              <View style={styles.cardTop}><View style={styles.flex}><Text style={styles.recordTitle}>{item.name}</Text><Text style={styles.recordMeta}>{item.sku} · {item.category || "Other"} · {item.inventory} ready to sell</Text><Text style={styles.recordMeta}>{money(item.price, db.currency)} each · {money((Number(item.inventory) || 0) * (Number(item.price) || 0), db.currency)} retail value</Text></View><View style={{ alignItems: "flex-end", gap: 6 }}><Pill text={item.archived ? "Archived" : Number(item.inventory) > 0 ? "In stock" : "Out of stock"} tone={item.archived ? "neutral" : Number(item.inventory) > 0 ? "green" : "amber"} /><Action label="Duplicate" quiet onPress={() => duplicateRecord("product", item)} /><Action label="Edit" quiet onPress={() => beginEdit("product", { ...item, price: String(item.price), inventory: String(item.inventory), recipe: recipes.map((part) => ({ ...part, quantity: String(part.quantity) })) })} /></View></View>
+              <View style={styles.cardTop}><View style={styles.flex}><Text style={styles.recordTitle}>{item.name}</Text><Text style={styles.recordMeta}>{item.sku} · {item.category || "Other"} · {item.inventory} ready to sell</Text><Text style={styles.recordMeta}>{money(item.price, db.currency)} each · {money((Number(item.inventory) || 0) * (Number(item.price) || 0), db.currency)} retail value</Text><Text style={styles.recordMeta}>{recipes.length} component{recipes.length === 1 ? "" : "s"} in recipe · {activeProductListings.length} active listing{activeProductListings.length === 1 ? "" : "s"}</Text></View><View style={{ alignItems: "flex-end", gap: 6 }}><Pill text={item.archived ? "Archived" : Number(item.inventory) > 0 ? "In stock" : "Out of stock"} tone={item.archived ? "neutral" : Number(item.inventory) > 0 ? "green" : "amber"} /><Action label="Duplicate" quiet onPress={() => duplicateRecord("product", item)} /><Action label="Edit" quiet onPress={() => beginEdit("product", { ...item, price: String(item.price), inventory: String(item.inventory), recipe: recipes.map((part) => ({ ...part, quantity: String(part.quantity) })) })} /></View></View>
               <View style={styles.actionRow}><Action label={expanded ? "Hide details" : "Show details"} quiet onPress={toggleExpanded} />{expanded && recipes.length > 0 && !item.archived ? <Action label="Make" quiet onPress={() => { setProductionProduct(item.id); navigateToScreen("Production"); }} /> : null}</View>
               {expanded ? <>
                 {item.description || item.materials || item.notes ? <Text style={styles.bodyText}>{item.description || item.materials || item.notes}</Text> : null}
                 {recipes.length ? <View style={styles.recipePreview}><Text style={styles.fieldLabel}>Product recipe · component stock</Text>{recipes.map((part) => { const component = db.components.find((row) => row.id === part.componentId); return <Text key={part.componentId} style={styles.bodyText}>{part.quantity} {part.unit} {part.name} · {component ? component.quantity + " " + (component.unit || "pieces") + " available" : "component archived or missing"}</Text>; })}</View> : <Text style={styles.bodyText}>No component recipe saved.</Text>}
+                <View style={styles.recipePreview}><Text style={styles.fieldLabel}>Marketplace listings linked to this product</Text>{productListings.length ? productListings.map((listing) => <Text key={listing.id} style={styles.bodyText}>{listing.listingSku || "Listing"} · {listing.archived ? "Archived" : listing.status || "Draft"} · {listing.marketplace || "No sales channel"}</Text>) : <Text style={styles.bodyText}>This product has no marketplace listings yet.</Text>}</View>
                 {item.archived ? <Action label="Restore product" onPress={() => restoreRecord("products", item)} /> : <View style={styles.actionRow}><Action label="Archive" quiet onPress={() => archiveRecord("products", item, "product")} /><Action label="Delete" quiet onPress={() => permanentlyDeleteRecord("products", item, "product")} /></View>}
               </> : null}
             </Card>
@@ -4338,7 +4461,21 @@ export default function App() {
     );
   };
 
-  const renderProduction = () => (
+  const renderProduction = () => {
+    const selectedProductionProduct = visibleProducts.find((item) => item.id === productionProduct);
+    const requestedQuantity = asNumber(productionQty, 0);
+    const productionShortages = selectedProductionProduct ? (selectedProductionProduct.recipe || []).map((part) => {
+      const component = db.components.find((item) => item.id === part.componentId && active(item));
+      const recipeAmount = Number(part.quantity);
+      const invalid = !Number.isFinite(recipeAmount) || recipeAmount <= 0;
+      const needed = recipeAmount * requestedQuantity;
+      const available = Number(component && component.quantity);
+      return invalid || !component || !Number.isFinite(available) || available < needed
+        ? { part, component, needed, available: Number.isFinite(available) ? available : 0, invalid }
+        : null;
+    }).filter(Boolean) : [];
+    const productionCannotRun = !selectedProductionProduct || !Number.isFinite(requestedQuantity) || requestedQuantity <= 0 || productionShortages.length > 0;
+    return (
     <>
       <ScreenDashboardHeader title="Production" description="Turn raw materials into finished stock. Recipe usage is checked before a batch is saved." metrics={[
         { label: "Active products", value: String(visibleProducts.length) },
@@ -4358,14 +4495,16 @@ export default function App() {
               const selected = visibleProducts.find((item) => item.id === productionProduct);
               return selected ? <View style={styles.recipePreview}><Text style={styles.fieldLabel}>Materials needed</Text>{(selected.recipe || []).length ? selected.recipe.map((part) => { const component = db.components.find((item) => item.id === part.componentId); const needed = Number(part.quantity) * asNumber(productionQty, 0); const available = Number(component && component.quantity) || 0; return <Text key={part.componentId} style={[styles.bodyText, needed > available && { color: COLORS.red, fontWeight: "700" }]}>• {part.name}: need {needed} {part.unit} · {available} available{part.sku ? " · " + part.sku : ""}</Text>; }) : <Text style={styles.bodyText}>This product has no material recipe. Production will add finished units without deducting materials.</Text>}</View> : null;
             })()}
-            <Pressable disabled={productionSaving} style={[styles.primaryButtonFull, productionSaving && styles.disabledButton]} onPress={makeProduction}><Text style={styles.primaryButtonFullText}>{productionSaving ? "Saving batch..." : "Complete production"}</Text></Pressable>
+            {productionShortages.length ? <View style={[styles.infoBanner, { borderColor: COLORS.red }]}><Text style={[styles.infoBannerTitle, { color: COLORS.red }]}>This batch can’t be made yet</Text>{productionShortages.map(({ part, component, needed, available, invalid }) => <Text key={part.componentId} style={[styles.bodyText, { color: COLORS.red }]}>{invalid ? part.name + ": the recipe amount is invalid. Edit the product recipe." : part.name + ": need " + needed + " " + part.unit + ", have " + available + " " + (component && component.unit || part.unit || "units") + ". Restock this component or lower the batch size."}</Text>)}<View style={styles.actionRow}><Action label={productionShortages.some((entry) => entry.invalid) ? "Edit product recipe" : "Open components"} quiet onPress={() => productionShortages.some((entry) => entry.invalid) ? beginEdit("product", { ...selectedProductionProduct, price: String(selectedProductionProduct.price), inventory: String(selectedProductionProduct.inventory), recipe: (selectedProductionProduct.recipe || []).map((part) => ({ ...part, quantity: String(part.quantity) })) }) : navigateToScreen("Components")} /></View></View> : !selectedProductionProduct ? <Text style={styles.fieldHint}>Choose a product before completing a production batch.</Text> : requestedQuantity <= 0 ? <Text style={styles.fieldHint}>Enter a quantity above zero to complete this batch.</Text> : null}
+            <Pressable disabled={productionSaving || productionCannotRun} style={[styles.primaryButtonFull, (productionSaving || productionCannotRun) && styles.disabledButton]} onPress={makeProduction}><Text style={styles.primaryButtonFullText}>{productionSaving ? "Saving batch..." : "Complete production"}</Text></Pressable>
           </>
         )}
       </Card>
       <Text style={styles.sectionTitle}>Recent batches</Text>
       {db.productions.length ? db.productions.slice(0, 12).map((batch) => <Card key={batch.id} style={styles.historyCard}><Text style={styles.recordTitle}>{batch.quantity} × {batch.productName}</Text><Text style={styles.recordMeta}>{batch.productSku} · {dateLabel(batch.date)}</Text></Card>) : <Text style={styles.bodyText}>Your completed batches will appear here.</Text>}
     </>
-  );
+    );
+  };
 
   const renderListings = () => {
     const activeListings = db.listings.filter(active);
@@ -4411,7 +4550,7 @@ export default function App() {
     const editListing = (item) => beginEdit("listing", { ...item, price: String(item.price), marketplaces: item.marketplaces || (item.marketplace ? [item.marketplace] : []) });
     return (
       <>
-        <View style={styles.infoBanner}><Text style={styles.infoBannerTitle}>Listings, promotion plans, and relists</Text><Text style={styles.infoBannerText}>Search and filter your marketplace listings. Sold-out products are flagged here so you can archive a listing or relist it after making more stock.</Text><View style={styles.actionRow}><Action label="＋ Add listing" onPress={() => beginAdd("listing")} /><Action label="Listing analytics" quiet onPress={() => navigateToScreen("Listing Analytics")} /></View></View>
+        <View style={styles.infoBanner}><Text style={styles.infoBannerTitle}>Listings, promotion plans, and relists</Text><Text style={styles.infoBannerText}>Search and filter your marketplace listings. Sold-out products are flagged here so you can archive a listing or relist it after making more stock. Archiving a listing hides that marketplace offer; the finished product and its materials remain available for other listings. Archive the product itself to return materials for unsold finished units.</Text><View style={styles.actionRow}><Action label="＋ Add listing" onPress={() => beginAdd("listing")} /><Action label="Listing analytics" quiet onPress={() => navigateToScreen("Listing Analytics")} /></View></View>
         <View style={styles.metricGrid}><Metric label="Live now" value={String(actualListings)} /><Metric label="Need archiving" value={String(needsArchive)} /><Metric label="Discounts planned" value={String(scheduledDiscounts)} /><Metric label="Relists coming up" value={String(relistsDue)} /></View>
         <View style={styles.metricGrid}><Metric label="Sales channels" value={String(listingChannels.size)} /><Metric label="Products represented" value={String(representedProducts.size)} /><Metric label="Combined asking prices" value={money(combinedAskingPrices, db.currency)} /></View>
          {needsArchive ? <Card><Text style={styles.cardTitle}>Sold-out listings need attention</Text>{activeListings.filter((item) => item.needsArchive).map((item) => {
@@ -4438,16 +4577,18 @@ export default function App() {
         <View style={styles.sectionHeadingRow}><Text style={styles.sectionTitle}>{showArchivedListings ? "Archived listings" : "Your marketplace listings"}</Text></View>
         {pagedListings.length ? pagedListings.map((item) => (
           <Card key={item.id}><View style={styles.cardTop}><View style={styles.flex}><Text style={styles.recordTitle}>{item.productName}</Text><Text style={styles.recordMeta}>{item.listingSku || "LIST SKU missing"} · Product {item.productSku || "SKU not saved"}</Text><Text style={styles.recordMeta}>{item.marketplace || "Marketplace not saved"} · {item.price != null ? money(item.price, db.currency) : "Price not saved"} · {listingAgeText(item)}</Text>{(() => { const plans = item.discountPlans || []; const activePlan = plans.filter((plan) => plan.startDate <= TODAY && (!plan.endDate || plan.endDate >= TODAY)).sort((a, b) => b.startDate.localeCompare(a.startDate))[0]; const price = Math.max(0, asNumber(item.price, 0)) * (activePlan ? 1 - Number(activePlan.percent) / 100 : 1); const estimates = payoutEstimatesForListing(item, price); return estimates.some((estimate) => estimate.configured) ? <Text numberOfLines={2} style={styles.recordMeta}>Est. after fees: {estimates.map((estimate) => estimate.channel + " " + money(estimate.payout, db.currency)).join(" · ")}</Text> : null; })()}</View><View style={{ alignItems: "flex-end", gap: 6 }}><Pill text={item.archived ? "Archived" : item.needsArchive ? "Sold · archive this listing" : item.status === "Paused" ? "Paused" : item.startDate && item.startDate > TODAY ? "Planned" : item.status || "Draft"} tone={item.needsArchive ? "red" : item.archived ? "neutral" : item.status === "Active" ? "green" : "amber"} /><Action label="Duplicate" quiet onPress={() => duplicateRecord("listing", item)} /><Action label="Edit" quiet onPress={() => editListing(item)} /></View></View>
-            <View style={styles.actionRow}><Action label={expandedListingIds.includes(item.id) ? "Hide details" : "Show details"} quiet onPress={() => setExpandedListingIds((old) => old.includes(item.id) ? old.filter((id) => id !== item.id) : old.concat([item.id]))} /></View>
+            <View style={styles.actionRow}><Action label={expandedListingIds.includes(item.id) ? "Hide details" : "Show details"} quiet onPress={() => setExpandedListingIds((old) => old.includes(item.id) ? [] : [item.id])} /></View>
             {expandedListingIds.includes(item.id) ? <>
             {(() => {
               const discountPlans = item.discountPlans || [];
               const currentPlan = discountPlans.filter((plan) => plan.startDate <= TODAY && (!plan.endDate || plan.endDate >= TODAY)).sort((a, b) => b.startDate.localeCompare(a.startDate))[0];
+              const product = db.products.find((row) => row.id === item.productId);
               const channels = channelsForListing(item);
               const currentPrice = Math.max(0, asNumber(item.price, 0)) * (currentPlan ? 1 - Number(currentPlan.percent) / 100 : 1);
               const payoutEstimates = payoutEstimatesForListing(item, currentPrice);
               const hasFeeEstimate = payoutEstimates.some((estimate) => estimate.configured);
               return <>
+                <View style={styles.recipePreview}><Text style={styles.fieldLabel}>Linked product and materials</Text>{product ? <><Text style={styles.bodyText}>{product.name} · {product.sku} · {Number(product.inventory) || 0} finished units in stock · {(product.recipe || []).length} component types in recipe</Text>{(product.recipe || []).map((part) => { const component = db.components.find((row) => row.id === part.componentId); return <Text key={part.componentId} style={styles.fieldHint}>{part.name}: {part.quantity} {part.unit || component && component.unit || "units"} per product · {component ? component.quantity + " available" : "component missing"}</Text>; })}<View style={styles.actionRow}><Action label="Open product catalog" quiet onPress={() => navigateToScreen("Products")} />{product.archived ? <Action label="Restore product and materials" onPress={() => restoreRecord("products", product)} /> : <Action label="Archive product and return materials" onPress={() => archiveRecord("products", product, "product")} />}</View></> : <Text style={styles.bodyText}>The linked product is missing. Check the product catalog and this listing’s saved link.</Text>}</View>
                 <View style={styles.channelChipRow}>{channels.map((channel) => <View key={channel} style={styles.channelChip}><Text style={styles.channelChipText}>{channel}</Text></View>)}</View>
                 <View style={styles.detailRow}><Text style={styles.detailText}>List price {money(item.price, db.currency)}</Text><Pill text={currentPlan ? `${currentPlan.percent}% off now` : `${discountPlans.length} discount plan${discountPlans.length === 1 ? "" : "s"}`} tone={currentPlan ? "green" : "neutral"} /></View>
                 {currentPlan ? <Text style={styles.bodyText}>Current sale price: {money(Number(item.price) * (1 - Number(currentPlan.percent) / 100), db.currency)} · through {currentPlan.endDate ? dateLabel(currentPlan.endDate) : "no end date"}</Text> : null}
@@ -5255,7 +5396,7 @@ export default function App() {
         const column = ideas.filter((idea) => (idea.status || "Ideas") === status);
         const expanded = expandedIdeaStatuses.includes(status);
         return <Card key={status} style={styles.ideaLane}>
-          <Pressable accessibilityRole="button" accessibilityState={{ expanded }} onPress={() => setExpandedIdeaStatuses((old) => expanded ? old.filter((item) => item !== status) : old.concat([status]))} style={styles.ideaLaneHeader}><View style={styles.flex}><Text style={styles.ideaLaneTitle}>{status}</Text><Text style={styles.subtle}>{column.length} {column.length === 1 ? "idea" : "ideas"}</Text></View><Text style={styles.ideaLaneChevron}>{expanded ? "−" : "+"}</Text></Pressable>
+          <Pressable accessibilityRole="button" accessibilityState={{ expanded }} onPress={() => setExpandedIdeaStatuses((old) => expanded ? [] : [status])} style={styles.ideaLaneHeader}><View style={styles.flex}><Text style={styles.ideaLaneTitle}>{status}</Text><Text style={styles.subtle}>{column.length} {column.length === 1 ? "idea" : "ideas"}</Text></View><Text style={styles.ideaLaneChevron}>{expanded ? "−" : "+"}</Text></Pressable>
           {expanded ? column.length ? column.map((idea) => <View key={idea.id} style={styles.ideaNote}><Text style={styles.recordTitle}>{idea.title}</Text><Text style={styles.recordMeta}>{idea.category || "Product idea"}</Text>{idea.notes ? <Text style={styles.bodyText}>{idea.notes}</Text> : null}<View style={styles.actionRow}><Action label="Edit idea" quiet onPress={() => beginEdit("idea", { ...idea, status: idea.status || "Ideas" })} />{index > 0 ? <Action label="← Move back" quiet onPress={() => moveIdea(idea, -1)} /> : null}{index < statuses.length - 1 ? <Action label="Move forward →" onPress={() => moveIdea(idea, 1)} /> : null}<Action label="Delete idea" quiet onPress={() => permanentlyDeleteRecord("ideas", idea, "idea")} /></View></View>) : <View style={styles.ideaLaneEmpty}><Text style={styles.ideaLaneEmptyText}>No ideas in this stage yet</Text><Text style={styles.ideaLaneEmptyHint}>Add a new idea or move one here when it is ready.</Text>{status === "Ideas" ? <Action label="＋ Add your first idea" onPress={() => beginAdd("idea")} /> : null}</View> : null}
         </Card>;
       })}
