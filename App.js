@@ -969,7 +969,7 @@ function createFormDefaults(type, record, defaultLowStock, defaults) {
     base.sku = "PROD-" + String(firstAvailableSkuNumber(skuRows, "sku", "PROD-")).padStart(3, "0");
     base.price = ""; base.inventory = "0"; base.recipe = []; base.condition = "Handmade"; base.packageWeight = ""; base.packageWeightUnit = "oz";
   }
-  if (type === "listing") { base.status = "Draft"; base.price = ""; base.marketplaces = []; base.startDate = ""; base.relistDate = ""; base.condition = "Handmade"; base.packageWeight = ""; base.packageWeightUnit = "oz"; }
+  if (type === "listing") { base.status = "Draft"; base.price = ""; base.marketplaces = []; base.startDate = ""; base.relistDate = ""; base.description = ""; base.condition = "Handmade"; base.packageWeight = ""; base.packageWeightUnit = "oz"; }
   if (type === "order") { base.quantity = "1"; base.extraFees = "0"; base.shippingCost = "0"; base.marketplace = "Direct"; base.date = TODAY; base.packageWeight = ""; base.packageWeightUnit = "oz"; }
   if (type === "order") {
     const line = record && Array.isArray(record.items) ? record.items[0] : null;
@@ -1003,7 +1003,9 @@ function calculateTotals(db) {
   const income = (db.incomes || []).reduce((sum, entry) => sum + (Number(entry.amount) || 0), 0);
   const payouts = orders.reduce((sum, order) => sum + netOrderPayout(order), 0);
   const materialCosts = orders.reduce((sum, order) => sum + orderMaterialCost(order), 0);
-  const netAfterFees = gross - refunds - fees;
+  // A recorded final payout is the best available source of truth. When one
+  // has not been entered, netOrderPayout estimates gross less fees and refunds.
+  const netAfterFees = payouts;
   const cashAfterExpenses = payouts + income - shipping - expenses;
   const estimatedProfit = netAfterFees - shipping - expenses - materialCosts;
   return { gross, fees, shipping, expenses, refunds, income, payouts, netAfterFees, materialCosts, cashAfterExpenses, estimatedProfit, orders: orders.length };
@@ -1521,6 +1523,44 @@ function RecipeEditor({ components, recipe, onChange }) {
   );
 }
 
+function AnalyticsLineChart({ points, series }) {
+  const [width, setWidth] = useState(0);
+  const plotHeight = 132;
+  const top = 14;
+  const left = 42;
+  const right = 12;
+  const maxValue = Math.max(1, ...points.flatMap((point) => series.map((item) => Number(point.values[item.key])).filter(Number.isFinite)));
+  const xAt = (index) => left + (points.length <= 1 ? Math.max(0, width - left - right) / 2 : (Math.max(0, width - left - right) * index) / (points.length - 1));
+  const yAt = (value) => top + plotHeight - (Math.max(0, value) / maxValue) * plotHeight;
+  return <View>
+    <View style={styles.analyticsLinePlot} onLayout={(event) => setWidth(event.nativeEvent.layout.width)}>
+      {[0, 0.5, 1].map((fraction) => <View key={fraction} style={[styles.analyticsLineGrid, { top: top + plotHeight * fraction }]} />)}
+      <Text style={[styles.analyticsLineAxisLabel, { top: top - 7 }]}>{Math.round(maxValue).toLocaleString()}</Text>
+      <Text style={[styles.analyticsLineAxisLabel, { top: top + plotHeight - 7 }]}>0</Text>
+      {width > 0 ? series.map((item) => {
+        const coords = points.map((point, index) => {
+          const value = Number(point.values[item.key]);
+          return Number.isFinite(value) ? { x: xAt(index), y: yAt(value) } : null;
+        });
+        return <React.Fragment key={item.key}>
+          {coords.slice(1).map((next, index) => {
+            const previous = coords[index];
+            if (!previous || !next) return null;
+            const dx = next.x - previous.x;
+            const dy = next.y - previous.y;
+            const length = Math.sqrt(dx * dx + dy * dy);
+            const angle = Math.atan2(dy, dx) * 180 / Math.PI;
+            return <View key={points[index + 1].date} style={{ position: "absolute", left: (previous.x + next.x) / 2 - length / 2, top: (previous.y + next.y) / 2 - 1, width: length, height: 2, backgroundColor: item.color, transform: [{ rotate: angle + "deg" }] }} />;
+          })}
+          {coords.map((point, index) => point ? <View key={points[index].date + "-dot"} style={{ position: "absolute", left: point.x - 4, top: point.y - 4, width: 8, height: 8, borderRadius: 4, backgroundColor: item.color, borderWidth: 1, borderColor: "#FFFFFF" }} /> : null)}
+        </React.Fragment>;
+      }) : null}
+    </View>
+    <View style={styles.analyticsLineLabels}>{points.map((point) => <Text key={point.date} numberOfLines={1} style={styles.analyticsLineLabel}>{point.date.slice(5)}</Text>)}</View>
+    <View style={styles.analyticsLineLegend}>{series.map((item) => <View key={item.key} style={styles.analyticsLineLegendItem}><View style={[styles.analyticsLineLegendDot, { backgroundColor: item.color }]} /><Text style={styles.analyticsLineLegendText}>{item.label}</Text></View>)}</View>
+  </View>;
+}
+
 function TimeBarChart({ title, bars }) {
   const max = Math.max(1, ...bars.map((bar) => Number(bar.value) || 0));
   return (
@@ -1777,7 +1817,8 @@ function RecordModal({ visible, type, record, db, prefill, onClose, onSave, onMa
   const optionsFor = (key) => (db.dropdownOptions && db.dropdownOptions[key] || DEFAULT_DROPDOWN_OPTIONS[key] || []).map((value) => ({ label: value, value }));
   const supplierOptions = (db.suppliers || []).filter(active).map((item) => ({ label: item.name, value: item.name }));
   const currentOrderProductId = type === "order" && record && record.items && record.items[0] ? record.items[0].productId : "";
-  const productOptions = (db.products || []).filter((p) => active(p) || p.id === currentOrderProductId).map((p) => ({ label: p.name + " (" + p.sku + ")" + (p.archived ? " · archived" : ""), value: p.id }));
+  const currentListingProductId = type === "listing" && record ? record.productId : "";
+  const productOptions = (db.products || []).filter((p) => active(p) || p.id === currentOrderProductId || p.id === currentListingProductId).map((p) => ({ label: p.name + " (" + p.sku + ") · " + (Math.max(0, Number(p.inventory) || 0)) + " available" + (p.archived ? " · archived" : ""), value: p.id }));
   const orderOptions = (db.orders || []).map((order) => ({ label: [order.orderSku, (order.items || []).map((item) => [item.productName, item.productSku, item.listingName, item.listingSku].filter(Boolean).join(" ").trim()).join(", "), order.customer, dateLabel(order.date)].filter(Boolean).join(" · "), value: order.id }));
   const fieldsByType = {
     component: [
@@ -1825,6 +1866,7 @@ function RecordModal({ visible, type, record, db, prefill, onClose, onSave, onMa
       { key: "marketplaces", label: "Sales channels (choose all that apply)", optionSet: "marketplaces", options: optionsFor("marketplaces"), multiple: true, required: true, placeholder: "Choose one or more channels" },
       { key: "status", label: "Status", optionSet: "listingStatuses", options: optionsFor("listingStatuses"), placeholder: "Choose status" },
       { key: "price", label: "Listing price", number: true, placeholder: "0.00" },
+      { key: "description", label: "Marketplace description", multiline: true, placeholder: "The description buyers see on this marketplace listing" },
       { key: "colors", label: "Colors", optionSet: "colors", options: optionsFor("colors"), multiple: true, searchable: true, placeholder: "Choose one or more colors" },
       { key: "materials", label: "Materials", optionSet: "materials", options: optionsFor("materials"), multiple: true, searchable: true, placeholder: "Choose one or more materials" },
       { key: "sizes", label: "Sizes", optionSet: "sizes", options: optionsFor("sizes"), multiple: true, searchable: true, placeholder: "Choose one or more sizes" },
@@ -2005,6 +2047,7 @@ function RecordModal({ visible, type, record, db, prefill, onClose, onSave, onMa
                   next.packageWeightUnit = selected.packageWeightUnit || "oz";
                   if (type === "listing") {
                     if (!next.listingSku) next.listingSku = selected.sku || "";
+                    if (!next.description) next.description = selected.description || "";
                     next.colors = selected.colors || "";
                     next.materials = selected.materials || "";
                     next.sizes = selected.sizes || "";
@@ -2982,6 +3025,7 @@ export default function App() {
           productId: product.id, productName: product.name, productSku: product.sku, listingSku,
           marketplaces, marketplace: marketplaces.join(", "), status: listingStatus, startDate,
           price: Math.max(0, asNumber(values.price, product.price)),
+          description: String(values.description || "").trim(),
           colors: values.colors || "", materials: values.materials || "", sizes: values.sizes || "", gender: values.gender || "", condition: values.condition || "Handmade",
           packageWeight: Math.max(0, asNumber(values.packageWeight, product.packageWeight || 0)), packageWeightUnit: values.packageWeightUnit || product.packageWeightUnit || "oz",
           discountPlans: record ? (record.discountPlans || []) : [],
@@ -3107,9 +3151,10 @@ export default function App() {
   const archiveRecord = (key, record, label, alreadyConfirmed = false) => {
     const activeListings = key === "products" ? db.listings.filter((item) => item.productId === record.id && active(item)).length : 0;
     const recipeProducts = key === "components" ? db.products.filter((item) => active(item) && (item.recipe || []).some((part) => part.componentId === record.id)) : [];
-    const message = activeListings
-      ? "This keeps history, returns materials for any unsold finished units to component stock, and archives " + activeListings + " related listing" + (activeListings === 1 ? "" : "s") + ". Restoring the product will use those materials again."
-      : key === "products" ? "This keeps history, returns materials for unsold finished units to component stock, and sets finished stock to zero. Restoring the product will use those materials again."
+    const unsoldUnits = key === "products" ? Math.max(0, Number(record.inventory) || 0) : 0;
+    const message = key === "listings"
+      ? "This archives only the marketplace listing. It does not archive the linked product or return any materials. The product and its finished stock stay in your catalog."
+      : key === "products" ? "This archives the product" + (activeListings ? " and " + activeListings + " related listing" + (activeListings === 1 ? "" : "s") : "") + (unsoldUnits > 0 ? ". It returns materials only for the " + unsoldUnits + " finished unit" + (unsoldUnits === 1 ? "" : "s") + " still in stock. Materials used to make sold units stay consumed." : ". Finished inventory is zero, so no materials will be returned. Materials used to make sold units stay consumed.") + " Restoring this product will use materials again for the stock being restored."
         : recipeProducts.length ? "This keeps its history and hides it from active lists. It is used by " + recipeProducts.map((item) => item.name).join(", ") + ". Production for those products will need this component restored or replaced in the recipe."
           : "This keeps its history and hides it from active lists.";
     const applyArchive = () => setData((old) => {
@@ -4261,12 +4306,12 @@ export default function App() {
           </Card>
           <View style={styles.metricGrid}>
             <Metric label="Gross sales" value={money(periodTotals.gross, db.currency)} />
-            <Metric label="Estimated profit" value={money(periodTotals.estimatedProfit, db.currency)} color={periodTotals.estimatedProfit < 0 ? COLORS.red : COLORS.green} />
+            <Metric label="Estimated profit" value={money(periodTotals.estimatedProfit, db.currency)} sub="Payout less shipping, expenses, and materials" color={periodTotals.estimatedProfit < 0 ? COLORS.red : COLORS.green} />
             <Metric label="Fees + shipping" value={money(periodTotals.fees + periodTotals.shipping, db.currency)} />
             <Metric label="Expenses" value={money(periodTotals.expenses, db.currency)} />
           </View>
-          <View style={styles.dashboardCashSummary}><Text style={styles.dashboardCashSummaryText}>Payout after fees <Text style={styles.dashboardCashSummaryValue}>{money(periodTotals.payouts, db.currency)}</Text>  ·  Other income <Text style={styles.dashboardCashSummaryValue}>{money(periodTotals.income, db.currency)}</Text>  ·  Refunds <Text style={styles.dashboardCashSummaryValue}>{money(periodTotals.refunds, db.currency)}</Text></Text></View>
-          <Text style={styles.metricNote}>Estimates use the fees, shipping, income, and expenses saved in your records. Compare them with your marketplace statements.</Text>
+          <View style={styles.dashboardCashSummary}><Text style={styles.dashboardCashSummaryText}>Payout after fees and refunds <Text style={styles.dashboardCashSummaryValue}>{money(periodTotals.payouts, db.currency)}</Text>  ·  Other income <Text style={styles.dashboardCashSummaryValue}>{money(periodTotals.income, db.currency)}</Text>  ·  Refunds recorded <Text style={styles.dashboardCashSummaryValue}>{money(periodTotals.refunds, db.currency)}</Text></Text></View>
+          <Text style={styles.metricNote}>Payout uses your actual final payout when entered; otherwise it estimates sales less fees and refunds. Estimated profit then subtracts shipping, expenses, and materials.</Text>
         </>
       ),
       fulfillment: (
@@ -4550,7 +4595,7 @@ export default function App() {
     const editListing = (item) => beginEdit("listing", { ...item, price: String(item.price), marketplaces: item.marketplaces || (item.marketplace ? [item.marketplace] : []) });
     return (
       <>
-        <View style={styles.infoBanner}><Text style={styles.infoBannerTitle}>Listings, promotion plans, and relists</Text><Text style={styles.infoBannerText}>Search and filter your marketplace listings. Sold-out products are flagged here so you can archive a listing or relist it after making more stock. Archiving a listing hides that marketplace offer; the finished product and its materials remain available for other listings. Archive the product itself to return materials for unsold finished units.</Text><View style={styles.actionRow}><Action label="＋ Add listing" onPress={() => beginAdd("listing")} /><Action label="Listing analytics" quiet onPress={() => navigateToScreen("Listing Analytics")} /></View></View>
+        <View style={styles.infoBanner}><Text style={styles.infoBannerTitle}>Listings, promotion plans, and relists</Text><Text style={styles.infoBannerText}>Search and filter your marketplace listings. Sold-out products are flagged here so you can archive a listing or relist it after making more stock. Archiving a listing hides only that marketplace offer and never returns materials. Sold units stay consumed; archiving a product returns materials only for finished units still in stock.</Text><View style={styles.actionRow}><Action label="＋ Add listing" onPress={() => beginAdd("listing")} /><Action label="Listing analytics" quiet onPress={() => navigateToScreen("Listing Analytics")} /></View></View>
         <View style={styles.metricGrid}><Metric label="Live now" value={String(actualListings)} /><Metric label="Need archiving" value={String(needsArchive)} /><Metric label="Discounts planned" value={String(scheduledDiscounts)} /><Metric label="Relists coming up" value={String(relistsDue)} /></View>
         <View style={styles.metricGrid}><Metric label="Sales channels" value={String(listingChannels.size)} /><Metric label="Products represented" value={String(representedProducts.size)} /><Metric label="Combined asking prices" value={money(combinedAskingPrices, db.currency)} /></View>
          {needsArchive ? <Card><Text style={styles.cardTitle}>Sold-out listings need attention</Text>{activeListings.filter((item) => item.needsArchive).map((item) => {
@@ -4576,7 +4621,7 @@ export default function App() {
         </> : null}
         <View style={styles.sectionHeadingRow}><Text style={styles.sectionTitle}>{showArchivedListings ? "Archived listings" : "Your marketplace listings"}</Text></View>
         {pagedListings.length ? pagedListings.map((item) => (
-          <Card key={item.id}><View style={styles.cardTop}><View style={styles.flex}><Text style={styles.recordTitle}>{item.productName}</Text><Text style={styles.recordMeta}>{item.listingSku || "LIST SKU missing"} · Product {item.productSku || "SKU not saved"}</Text><Text style={styles.recordMeta}>{item.marketplace || "Marketplace not saved"} · {item.price != null ? money(item.price, db.currency) : "Price not saved"} · {listingAgeText(item)}</Text>{(() => { const plans = item.discountPlans || []; const activePlan = plans.filter((plan) => plan.startDate <= TODAY && (!plan.endDate || plan.endDate >= TODAY)).sort((a, b) => b.startDate.localeCompare(a.startDate))[0]; const price = Math.max(0, asNumber(item.price, 0)) * (activePlan ? 1 - Number(activePlan.percent) / 100 : 1); const estimates = payoutEstimatesForListing(item, price); return estimates.some((estimate) => estimate.configured) ? <Text numberOfLines={2} style={styles.recordMeta}>Est. after fees: {estimates.map((estimate) => estimate.channel + " " + money(estimate.payout, db.currency)).join(" · ")}</Text> : null; })()}</View><View style={{ alignItems: "flex-end", gap: 6 }}><Pill text={item.archived ? "Archived" : item.needsArchive ? "Sold · archive this listing" : item.status === "Paused" ? "Paused" : item.startDate && item.startDate > TODAY ? "Planned" : item.status || "Draft"} tone={item.needsArchive ? "red" : item.archived ? "neutral" : item.status === "Active" ? "green" : "amber"} /><Action label="Duplicate" quiet onPress={() => duplicateRecord("listing", item)} /><Action label="Edit" quiet onPress={() => editListing(item)} /></View></View>
+          <Card key={item.id}><View style={styles.cardTop}><View style={styles.flex}><Text style={styles.recordTitle}>{item.productName}</Text><Text style={styles.recordMeta}>{item.listingSku || "LIST SKU missing"} · Product {item.productSku || "SKU not saved"}</Text><Text style={styles.recordMeta}>{item.marketplace || "Marketplace not saved"} · {item.price != null ? money(item.price, db.currency) : "Price not saved"} · {listingAgeText(item)}</Text>{item.description ? <Text numberOfLines={2} style={styles.bodyText}>{item.description}</Text> : null}{(() => { const plans = item.discountPlans || []; const activePlan = plans.filter((plan) => plan.startDate <= TODAY && (!plan.endDate || plan.endDate >= TODAY)).sort((a, b) => b.startDate.localeCompare(a.startDate))[0]; const price = Math.max(0, asNumber(item.price, 0)) * (activePlan ? 1 - Number(activePlan.percent) / 100 : 1); const estimates = payoutEstimatesForListing(item, price); return estimates.some((estimate) => estimate.configured) ? <Text numberOfLines={2} style={styles.recordMeta}>Est. after fees: {estimates.map((estimate) => estimate.channel + " " + money(estimate.payout, db.currency)).join(" · ")}</Text> : null; })()}</View><View style={{ alignItems: "flex-end", gap: 6 }}><Pill text={item.archived ? "Archived" : item.needsArchive ? "Sold · archive this listing" : item.status === "Paused" ? "Paused" : item.startDate && item.startDate > TODAY ? "Planned" : item.status || "Draft"} tone={item.needsArchive ? "red" : item.archived ? "neutral" : item.status === "Active" ? "green" : "amber"} /><Action label="Duplicate" quiet onPress={() => duplicateRecord("listing", item)} /><Action label="Edit" quiet onPress={() => editListing(item)} /></View></View>
             <View style={styles.actionRow}><Action label={expandedListingIds.includes(item.id) ? "Hide details" : "Show details"} quiet onPress={() => setExpandedListingIds((old) => old.includes(item.id) ? [] : [item.id])} /></View>
             {expandedListingIds.includes(item.id) ? <>
             {(() => {
@@ -4588,7 +4633,8 @@ export default function App() {
               const payoutEstimates = payoutEstimatesForListing(item, currentPrice);
               const hasFeeEstimate = payoutEstimates.some((estimate) => estimate.configured);
               return <>
-                <View style={styles.recipePreview}><Text style={styles.fieldLabel}>Linked product and materials</Text>{product ? <><Text style={styles.bodyText}>{product.name} · {product.sku} · {Number(product.inventory) || 0} finished units in stock · {(product.recipe || []).length} component types in recipe</Text>{(product.recipe || []).map((part) => { const component = db.components.find((row) => row.id === part.componentId); return <Text key={part.componentId} style={styles.fieldHint}>{part.name}: {part.quantity} {part.unit || component && component.unit || "units"} per product · {component ? component.quantity + " available" : "component missing"}</Text>; })}<View style={styles.actionRow}><Action label="Open product catalog" quiet onPress={() => navigateToScreen("Products")} />{product.archived ? <Action label="Restore product and materials" onPress={() => restoreRecord("products", product)} /> : <Action label="Archive product and return materials" onPress={() => archiveRecord("products", product, "product")} />}</View></> : <Text style={styles.bodyText}>The linked product is missing. Check the product catalog and this listing’s saved link.</Text>}</View>
+                <View style={styles.recipePreview}><Text style={styles.fieldLabel}>Linked product and materials</Text>{product ? <><Text style={styles.bodyText}>{product.name} · {product.sku} · {Number(product.inventory) || 0} finished units in stock · {(product.recipe || []).length} component types in recipe</Text>{(product.recipe || []).map((part) => { const component = db.components.find((row) => row.id === part.componentId); return <Text key={part.componentId} style={styles.fieldHint}>{part.name}: {part.quantity} {part.unit || component && component.unit || "units"} per product · {component ? component.quantity + " available" : "component missing"}</Text>; })}<View style={styles.actionRow}><Action label="Open product catalog" quiet onPress={() => navigateToScreen("Products")} />{product.archived ? <Action label="Restore product and materials" onPress={() => restoreRecord("products", product)} /> : <Action label={Number(product.inventory) > 0 ? "Archive product · return materials for unsold stock" : "Archive product · no materials to return"} onPress={() => archiveRecord("products", product, "product")} />}</View><Text style={styles.fieldHint}>Archiving this listing alone never returns materials. Product archiving returns materials only for finished units still in stock; sold units stay consumed.</Text></> : <Text style={styles.bodyText}>The linked product is missing. Check the product catalog and this listing’s saved link.</Text>}</View>
+                <View style={styles.recipePreview}><Text style={styles.fieldLabel}>Marketplace description</Text>{item.description ? <Text style={styles.bodyText}>{item.description}</Text> : <Text style={styles.fieldHint}>No marketplace description saved yet.</Text>}<View style={styles.actionRow}><Action label={item.description ? "Edit description" : "Add description"} quiet onPress={() => editListing(item)} /></View></View>
                 <View style={styles.channelChipRow}>{channels.map((channel) => <View key={channel} style={styles.channelChip}><Text style={styles.channelChipText}>{channel}</Text></View>)}</View>
                 <View style={styles.detailRow}><Text style={styles.detailText}>List price {money(item.price, db.currency)}</Text><Pill text={currentPlan ? `${currentPlan.percent}% off now` : `${discountPlans.length} discount plan${discountPlans.length === 1 ? "" : "s"}`} tone={currentPlan ? "green" : "neutral"} /></View>
                 {currentPlan ? <Text style={styles.bodyText}>Current sale price: {money(Number(item.price) * (1 - Number(currentPlan.percent) / 100), db.currency)} · through {currentPlan.endDate ? dateLabel(currentPlan.endDate) : "no end date"}</Text> : null}
@@ -4609,7 +4655,7 @@ export default function App() {
                 })}</View> : null}
               </>;
             })()}
-             <View style={styles.actionRow}>{!item.archived ? <><Action label="＋ Add discount plan" onPress={() => openDiscountEditor(item, null)} /><Action label="Plan relist" quiet onPress={() => editListing(item)} />{item.needsArchive ? <>{Number((db.products.find((product) => product.id === item.productId) || {}).inventory) > 0 ? <Action label="Relist now" onPress={() => setRelistEditor(item)} /> : <Action label="Make more first" quiet onPress={() => { const product = db.products.find((entry) => entry.id === item.productId); if (product) { setProductionProduct(product.id); navigateToScreen("Production"); } }} />}<Action label="Archive sold listing" onPress={() => archiveRecord("listings", item, "listing")} /></> : null}<Action label="Archive" quiet onPress={() => archiveRecord("listings", item, "listing")} /><Action label="Delete" quiet onPress={() => permanentlyDeleteRecord("listings", item, "listing")} /></> : <Action label="Restore listing" onPress={() => restoreRecord("listings", item)} />}</View>
+             <View style={styles.actionRow}>{!item.archived ? <><Action label="＋ Add discount plan" onPress={() => openDiscountEditor(item, null)} /><Action label="Plan relist" quiet onPress={() => editListing(item)} />{item.needsArchive ? <>{Number((db.products.find((product) => product.id === item.productId) || {}).inventory) > 0 ? <Action label="Relist now" onPress={() => setRelistEditor(item)} /> : <Action label="Make more first" quiet onPress={() => { const product = db.products.find((entry) => entry.id === item.productId); if (product) { setProductionProduct(product.id); navigateToScreen("Production"); } }} />}<Action label="Archive sold listing" onPress={() => archiveRecord("listings", item, "listing")} /></> : null}{!item.needsArchive ? <Action label="Archive" quiet onPress={() => archiveRecord("listings", item, "listing")} /> : null}<Action label="Delete" quiet onPress={() => permanentlyDeleteRecord("listings", item, "listing")} /></> : <Action label="Restore listing" onPress={() => restoreRecord("listings", item)} />}</View>
             </> : null}
           </Card>
         )) : <EmptyState title={showArchivedListings ? "No archived listings" : "No listings match this filter"} body="Change the status or search, or add a new listing." action={showArchivedListings ? undefined : "Create a listing"} onPress={showArchivedListings ? undefined : () => beginAdd("listing")} />}
@@ -4620,13 +4666,15 @@ export default function App() {
 
   const listingAnalyticsChannels = (listing) => Array.from(new Set((Array.isArray(listing && listing.marketplaces) ? listing.marketplaces : String(listing && listing.marketplace || "").split(",")).map((channel) => String(channel || "").trim()).filter(Boolean)));
   const listingAnalyticsIsActive = (listing) => !!listing && active(listing) && listing.status === "Active" && !listing.needsArchive && (!listing.startDate || listing.startDate <= TODAY);
+  const listingAnalyticsCanRecord = (listing) => !!listing && listingAnalyticsChannels(listing).length > 0;
+  const listingAnalyticsCanBulkRecord = (listing) => listingAnalyticsCanRecord(listing) && !listing.archived;
   const openAnalyticsEntry = (mode, listing, marketplace) => {
-    const candidates = db.listings.filter(listingAnalyticsIsActive);
+    const candidates = db.listings.filter(listingAnalyticsCanRecord);
     if (!candidates.length) {
       Alert.alert("Add a listing first", "Create a marketplace listing before recording its statistics.");
       return;
     }
-    const selected = listing || candidates[0];
+    const selected = listing || candidates.find(listingAnalyticsIsActive) || candidates.find((item) => !item.archived) || candidates[0];
     const channels = listingAnalyticsChannels(selected);
     const chosenMarketplace = marketplace || (analyticsMarketplaceFilter !== "All" && channels.includes(analyticsMarketplaceFilter) ? analyticsMarketplaceFilter : channels[0] || "");
     const now = new Date();
@@ -4679,7 +4727,7 @@ export default function App() {
     const metricKeys = ["views", "clicks", "favorites", "likes", "watchers", "offers"];
     const reports = [];
     if (analyticsEntryMode === "single") {
-      const listing = db.listings.find((item) => item.id === analyticsEntryListingId && listingAnalyticsIsActive(item));
+      const listing = db.listings.find((item) => item.id === analyticsEntryListingId && listingAnalyticsCanRecord(item));
       if (!listing || !listingAnalyticsChannels(listing).includes(analyticsEntryMarketplace)) { Alert.alert("Choose a listing and marketplace", "Select a saved listing and one of its marketplaces."); return; }
       const metrics = {};
       for (const key of metricKeys) {
@@ -4692,7 +4740,7 @@ export default function App() {
       if (!Object.keys(metrics).length) { Alert.alert("Enter at least one metric", "Leave unsupported metrics blank and enter the counts shown by the marketplace."); return; }
       reports.push(buildAnalyticsReport(listing.id, analyticsEntryMarketplace, date, analyticsEntryTime, metrics, analyticsEntryNote));
     } else {
-      const listings = db.listings.filter((item) => listingAnalyticsIsActive(item) && listingAnalyticsChannels(item).includes(analyticsEntryMarketplace));
+      const listings = db.listings.filter((item) => listingAnalyticsCanBulkRecord(item) && listingAnalyticsChannels(item).includes(analyticsEntryMarketplace));
       for (const listing of listings) {
         const row = analyticsBulkRows[listing.id] || {};
         const metrics = {};
@@ -4813,10 +4861,25 @@ export default function App() {
       rankGroups.set(id, current);
     });
     const topPerformers = Array.from(rankGroups.values()).sort((a, b) => b.value - a.value).slice(0, 5);
-    const chartGroups = new Map();
-    deltaEntries.filter((entry) => entry.key === analyticsChartMetric).forEach((entry) => chartGroups.set(entry.date, (chartGroups.get(entry.date) || 0) + entry.value));
-    const chartPoints = Array.from(chartGroups.entries()).sort((a, b) => a[0].localeCompare(b[0])).slice(-10);
-    const chartMax = Math.max(1, ...chartPoints.map((entry) => entry[1]));
+    const chartDates = Array.from(new Set(Array.from(reportsByScope.values()).flatMap((scopeReports) => scopeReports.filter((report) => report.reportDate && inRange(report.reportDate) && report.metrics && report.metrics[analyticsChartMetric] != null && Number.isFinite(Number(report.metrics[analyticsChartMetric]))).map((report) => report.reportDate)))).sort((a, b) => a.localeCompare(b)).slice(-10);
+    const chartPlatforms = analyticsMarketplaceFilter === "All" ? Array.from(new Set(Array.from(reportsByScope.values()).map((scopeReports) => scopeReports[0] && scopeReports[0].platform).filter(Boolean))).sort((a, b) => a.localeCompare(b)) : [analyticsMarketplaceFilter];
+    const viewChartPoints = chartDates.map((date) => {
+      const values = {};
+      reportsByScope.forEach((scopeReports) => {
+        const eligible = scopeReports.filter((report) => report.reportDate && report.reportDate <= date && report.metrics && report.metrics[analyticsChartMetric] != null && Number.isFinite(Number(report.metrics[analyticsChartMetric])));
+        if (!eligible.length) return;
+        const snapshots = eligible.filter((report) => report.metricMode !== "period");
+        const latestSnapshot = snapshots[snapshots.length - 1];
+        const platform = (latestSnapshot || eligible[eligible.length - 1]).platform;
+        const total = latestSnapshot ? Number(latestSnapshot.metrics[analyticsChartMetric]) : eligible.filter((report) => report.metricMode === "period").reduce((sum, report) => sum + Number(report.metrics[analyticsChartMetric]), 0);
+        values[platform] = (values[platform] || 0) + total;
+      });
+      values.__all = chartPlatforms.reduce((sum, platform) => sum + (Number(values[platform]) || 0), 0);
+      return { date, values };
+    });
+    const analyticsLinePalette = ["#88445E", "#C19439", "#397C78", "#547CA8", "#AE6848", "#8067A3", "#66834E", "#4A4A4A"];
+    const analyticsLineSeries = chartPlatforms.map((platform, index) => ({ key: platform, label: platform, color: analyticsLinePalette[index % analyticsLinePalette.length] }));
+    if (analyticsMarketplaceFilter === "All" && chartPlatforms.length > 0) analyticsLineSeries.push({ key: "__all", label: "All platforms", color: "#25232A" });
     const recentReports = filteredReports.slice().sort((a, b) => String(b.recordedAt || b.periodEnd || b.periodStart || "").localeCompare(String(a.recordedAt || a.periodEnd || a.periodStart || ""))).slice(0, 10);
     const needsCheck = visibleListings.filter(listingAnalyticsIsActive).flatMap((listing) => {
       const channels = analyticsMarketplaceFilter === "All" ? listingAnalyticsChannels(listing) : [analyticsMarketplaceFilter];
@@ -4842,10 +4905,11 @@ export default function App() {
       <Text style={styles.fieldHint}>Range: {rangeStart ? dateLabel(rangeStart) : "all recorded history"} – {dateLabel(rangeEnd)}. Snapshot increases are assigned to the later check; gaps are not filled in.</Text>
       <View style={styles.metricGrid}>{metricSpecs.map((metric) => <Metric key={metric.key} label={metric.label} value={metricHasComparable.has(metric.key) ? String(metricTotals[metric.key]) : "—"} sub={metricHasComparable.has(metric.key) ? "increase between checks" : filteredReports.some((report) => report.metrics && report.metrics[metric.key] != null) ? "record another check" : "not recorded"} />)}</View>
       <View style={styles.metricGrid}><Metric label="Sales linked to listings" value={String(analyticsSales)} sub="units in selected period" /><Metric label="Listings shown" value={String(visibleListings.length)} sub="match the selected filters" /></View>
-      <View style={styles.sectionHeadingRow}><Text style={styles.sectionTitle}>Listing engagement over time</Text></View>
+      <View style={styles.sectionHeadingRow}><Text style={styles.sectionTitle}>Listing totals over time</Text></View>
       <Card style={styles.chartCard}>
         <ChoiceChips label="Metric" options={metricSpecs.map((metric) => ({ label: metric.label, value: metric.key }))} value={analyticsChartMetric} onChange={setAnalyticsChartMetric} />
-        {chartPoints.length ? <View style={styles.chartRow}>{chartPoints.map(([date, value]) => <View key={date} style={styles.chartColumn}><Text style={styles.chartValue}>{value}</Text><View style={styles.chartTrack}><View style={[styles.chartBar, { height: Math.max(4, Math.round(82 * value / chartMax)) }]} /></View><Text style={styles.chartLabel}>{date.slice(5)}</Text></View>)}</View> : <Text style={styles.bodyText}>Two checks are needed before a snapshot trend can be calculated. Period totals you enter are shown as recorded.</Text>}
+        <Text style={styles.fieldHint}>{analyticsMarketplaceFilter === "All" ? "Lines show each marketplace and the combined total across all selected listings." : "This line shows the total across selected listings on " + analyticsMarketplaceFilter + "."} The chart uses the latest saved marketplace counts at each check date.</Text>
+        {viewChartPoints.length ? <AnalyticsLineChart points={viewChartPoints} series={analyticsLineSeries} /> : <Text style={styles.bodyText}>Record a marketplace count to begin the trend. Add more checks over time to see the line change.</Text>}
       </Card>
       <View style={styles.sectionHeadingRow}><Text style={styles.sectionTitle}>Top performers</Text></View>
       <ChoiceChips label="Rank by" options={metricSpecs.map((metric) => ({ label: metric.label, value: metric.key }))} value={analyticsRankMetric} onChange={setAnalyticsRankMetric} />
@@ -4861,7 +4925,7 @@ export default function App() {
           {platforms.length ? platforms.map((platform) => {
             const latest = latestReport(listing, platform);
             const recordedAt = latest && (latest.recordedAt || latest.periodEnd || latest.periodStart);
-            return <View key={platform} style={styles.analyticsPlatformBlock}><View style={styles.cardTop}><View style={styles.flex}><Text style={styles.listingPayoutChannel}>{platform}</Text><Text style={styles.recordMeta}>{recordedAt ? "Last checked " + dateLabel(timestampDateKey(recordedAt) || recordedAt) : "No metrics recorded yet"}</Text></View>{listingAnalyticsIsActive(listing) ? <Action label="＋ Record" quiet onPress={() => openAnalyticsEntry("single", listing, platform)} /> : null}</View><View style={styles.analyticsMiniGrid}>{metricSpecs.map((metric) => <View key={metric.key} style={styles.analyticsMiniMetric}><Text style={styles.analyticsMiniValue}>{latest && latest.metrics && latest.metrics[metric.key] != null ? String(latest.metrics[metric.key]) : "—"}</Text><Text style={styles.analyticsMiniLabel}>{metric.label}</Text></View>)}</View></View>;
+            return <View key={platform} style={styles.analyticsPlatformBlock}><View style={styles.cardTop}><View style={styles.flex}><Text style={styles.listingPayoutChannel}>{platform}</Text><Text style={styles.recordMeta}>{recordedAt ? "Last checked " + dateLabel(timestampDateKey(recordedAt) || recordedAt) : "No metrics recorded yet"}</Text></View>{listingAnalyticsCanRecord(listing) ? <Action label="＋ Record" quiet onPress={() => openAnalyticsEntry("single", listing, platform)} /> : null}</View><View style={styles.analyticsMiniGrid}>{metricSpecs.map((metric) => <View key={metric.key} style={styles.analyticsMiniMetric}><Text style={styles.analyticsMiniValue}>{latest && latest.metrics && latest.metrics[metric.key] != null ? String(latest.metrics[metric.key]) : "—"}</Text><Text style={styles.analyticsMiniLabel}>{metric.label}</Text></View>)}</View></View>;
           }) : <Text style={styles.bodyText}>No marketplace is attached to this listing yet.</Text>}
           <View style={styles.actionRow}><Action label={expanded ? "Hide recording history" : "Show recording history"} quiet onPress={() => setAnalyticsExpandedListingId(expanded ? "" : listing.id)} /><Action label="Open listing details" quiet onPress={() => openDetails("listing", listing)} /></View>
           {expanded ? <View style={styles.discountPlanList}><Text style={styles.fieldLabel}>Recording history</Text>{reports.length ? reports.slice().sort((a, b) => String(b.recordedAt || b.periodEnd || b.periodStart || "").localeCompare(String(a.recordedAt || a.periodEnd || a.periodStart || ""))).map((report) => <View key={report.id} style={styles.analyticsHistoryRow}><View style={styles.flex}><Text style={styles.recordTitle}>{report.platform || "Marketplace"} · {report.recordedAt ? new Date(report.recordedAt).toLocaleString() : dateLabel(report.periodEnd || report.periodStart)}</Text><Text style={styles.recordMeta}>{metricSpecs.filter((metric) => report.metrics && report.metrics[metric.key] != null).map((metric) => metric.label + " " + report.metrics[metric.key]).join(" · ") || "No values entered"}</Text>{deltaEntries.some((entry) => entry.report.id === report.id && entry.reset) ? <Text style={styles.fieldHint}>A counter decreased since the previous check. Its new value is treated as activity after the reset.</Text> : null}{report.note ? <Text style={styles.fieldHint}>{report.note}</Text> : null}</View></View>) : <Text style={styles.bodyText}>No checks saved for this listing yet.</Text>}</View> : null}
@@ -4980,7 +5044,7 @@ export default function App() {
     const salesDeductionExpenseTotal = salesDeductionExpenses.reduce((sum, item) => sum + (Number(item.amount) || 0), 0);
     const outOfPocketExpenseTotal = outOfPocketExpenses.reduce((sum, item) => sum + (Number(item.amount) || 0), 0);
     const payout = orders.reduce((sum, order) => sum + netOrderPayout(order), 0);
-    const netAfterFees = gross - refunds - fees;
+    const netAfterFees = payout;
     const estimatedProfit = netAfterFees - shipping - salesDeductionExpenseTotal - outOfPocketExpenseTotal - materialCosts;
     const periodLabel = financePeriod === "all" ? "All time" : financePeriod === "day" ? dateLabel(financeAnchor) : bounds ? dateLabel(bounds.start) + " – " + dateLabel(bounds.end) : "Choose a date";
     const shiftPeriod = (delta) => {
@@ -5810,7 +5874,7 @@ export default function App() {
                   const selected = db.listings.find((item) => item.id === analyticsEntryListingId);
                   const channels = listingAnalyticsChannels(selected);
                   return <>
-                    <Field field={{ label: "Listing", options: db.listings.filter(listingAnalyticsIsActive).map((item) => ({ label: [item.productName, item.listingSku].filter(Boolean).join(" · "), value: item.id })), searchable: true, searchPlaceholder: "Search listings" }} value={analyticsEntryListingId} onChange={(id) => { const next = db.listings.find((item) => item.id === id); setAnalyticsEntryListingId(id); setAnalyticsEntryMarketplace(listingAnalyticsChannels(next)[0] || ""); }} />
+                    <Field field={{ label: "Listing", options: db.listings.filter(listingAnalyticsCanRecord).map((item) => ({ label: [item.productName, item.listingSku, item.archived ? "Archived" : item.needsArchive || item.status === "Sold" ? "Sold" : item.status || "Draft"].filter(Boolean).join(" · "), value: item.id })), searchable: true, searchPlaceholder: "Search listings" }} value={analyticsEntryListingId} onChange={(id) => { const next = db.listings.find((item) => item.id === id); setAnalyticsEntryListingId(id); setAnalyticsEntryMarketplace(listingAnalyticsChannels(next)[0] || ""); }} />
                     <Field field={{ label: "Marketplace", options: channels.map((channel) => ({ label: channel, value: channel })) }} value={analyticsEntryMarketplace} onChange={setAnalyticsEntryMarketplace} />
                     <Field field={{ label: "Date checked", date: true }} value={analyticsEntryDate} onChange={setAnalyticsEntryDate} />
                     <Text style={styles.fieldLabel}>Time checked (24-hour HH:MM)</Text><TextInput value={analyticsEntryTime} onChangeText={setAnalyticsEntryTime} placeholder="14:30" placeholderTextColor={COLORS.placeholder} keyboardType="numbers-and-punctuation" style={styles.input} />
@@ -5819,11 +5883,11 @@ export default function App() {
                   </>;
                 })()}
               </> : <>
-                <Field field={{ label: "Marketplace", options: Array.from(new Set(db.listings.filter(listingAnalyticsIsActive).flatMap(listingAnalyticsChannels))).map((channel) => ({ label: channel, value: channel })) }} value={analyticsEntryMarketplace} onChange={(channel) => { setAnalyticsEntryMarketplace(channel); setAnalyticsBulkRows({}); }} />
+                <Field field={{ label: "Marketplace", options: Array.from(new Set(db.listings.filter(listingAnalyticsCanBulkRecord).flatMap(listingAnalyticsChannels))).map((channel) => ({ label: channel, value: channel })) }} value={analyticsEntryMarketplace} onChange={(channel) => { setAnalyticsEntryMarketplace(channel); setAnalyticsBulkRows({}); }} />
                 <Field field={{ label: "Date checked", date: true }} value={analyticsEntryDate} onChange={setAnalyticsEntryDate} />
                 <Text style={styles.fieldLabel}>Time checked (24-hour HH:MM)</Text><TextInput value={analyticsEntryTime} onChangeText={setAnalyticsEntryTime} placeholder="14:30" placeholderTextColor={COLORS.placeholder} keyboardType="numbers-and-punctuation" style={styles.input} />
                 <Text style={styles.fieldHint}>Enter the marketplace totals for each listing below. Unchanged cells can stay blank; each row with at least one value will save as its own snapshot.</Text>
-                {db.listings.filter((item) => listingAnalyticsIsActive(item) && listingAnalyticsChannels(item).includes(analyticsEntryMarketplace)).map((listing) => <View key={listing.id} style={styles.formSection}><Text style={styles.formSectionTitle}>{listing.productName}</Text><Text style={styles.recordMeta}>{listing.listingSku || "Listing"} · {analyticsEntryMarketplace}</Text>{LISTING_ANALYTICS_METRICS.map((metric) => <View key={metric.key} style={styles.analyticsInputRow}><Text style={styles.optionText}>{metric.label}</Text><TextInput value={String((analyticsBulkRows[listing.id] || {})[metric.key] == null ? "" : (analyticsBulkRows[listing.id] || {})[metric.key])} onChangeText={(value) => setAnalyticsBulkRows((old) => ({ ...old, [listing.id]: { ...(old[listing.id] || {}), [metric.key]: value } }))} keyboardType="number-pad" placeholder="—" placeholderTextColor={COLORS.placeholder} style={styles.analyticsInput} /></View>)}</View>)}
+                {db.listings.filter((item) => listingAnalyticsCanBulkRecord(item) && listingAnalyticsChannels(item).includes(analyticsEntryMarketplace)).map((listing) => <View key={listing.id} style={styles.formSection}><Text style={styles.formSectionTitle}>{listing.productName}</Text><Text style={styles.recordMeta}>{listing.listingSku || "Listing"} · {analyticsEntryMarketplace}</Text>{LISTING_ANALYTICS_METRICS.map((metric) => <View key={metric.key} style={styles.analyticsInputRow}><Text style={styles.optionText}>{metric.label}</Text><TextInput value={String((analyticsBulkRows[listing.id] || {})[metric.key] == null ? "" : (analyticsBulkRows[listing.id] || {})[metric.key])} onChangeText={(value) => setAnalyticsBulkRows((old) => ({ ...old, [listing.id]: { ...(old[listing.id] || {}), [metric.key]: value } }))} keyboardType="number-pad" placeholder="—" placeholderTextColor={COLORS.placeholder} style={styles.analyticsInput} /></View>)}</View>)}
                 <Field field={{ label: "Note for these checks (optional)", multiline: true, placeholder: "Shared note" }} value={analyticsEntryNote} onChange={setAnalyticsEntryNote} />
               </>}
               <View style={styles.actionRow}><Action label="Cancel" quiet onPress={() => setAnalyticsEntryMode("")} /><Action label={analyticsEntryMode === "bulk" ? "Save completed rows" : "Save recording"} onPress={saveAnalyticsEntry} /></View>
@@ -6282,6 +6346,15 @@ function makeStyles() { return StyleSheet.create({
   calendarDotActive: { backgroundColor: COLORS.wine },
   timeDisplay: { color: COLORS.wine, fontSize: 30, fontWeight: "800", marginTop: 9 },
   chartCard: { paddingBottom: 12 },
+  analyticsLinePlot: { height: 160, position: "relative", marginTop: 8 },
+  analyticsLineGrid: { position: "absolute", left: 36, right: 8, height: 1, backgroundColor: COLORS.line },
+  analyticsLineAxisLabel: { position: "absolute", left: 0, width: 32, textAlign: "right", color: COLORS.muted, fontSize: 10 },
+  analyticsLineLabels: { flexDirection: "row", justifyContent: "space-between", gap: 2, marginLeft: 38, marginRight: 8, marginTop: 2 },
+  analyticsLineLabel: { flex: 1, minWidth: 0, textAlign: "center", color: COLORS.muted, fontSize: 9 },
+  analyticsLineLegend: { flexDirection: "row", flexWrap: "wrap", gap: 10, marginTop: 12 },
+  analyticsLineLegendItem: { flexDirection: "row", alignItems: "center", gap: 5 },
+  analyticsLineLegendDot: { width: 9, height: 9, borderRadius: 5 },
+  analyticsLineLegendText: { color: COLORS.ink, fontSize: 11 },
   chartRow: { minHeight: 132, flexDirection: "row", alignItems: "flex-end", justifyContent: "space-around", gap: 3, marginTop: 4 },
   chartColumn: { flex: 1, minWidth: 0, alignItems: "center", justifyContent: "flex-end" },
   chartValue: { color: COLORS.muted, fontSize: 8, minHeight: 12, textAlign: "center" },
