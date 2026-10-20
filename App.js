@@ -241,6 +241,7 @@ let CURRENT_DATE_FORMAT = DEFAULT_DATE_FORMAT;
 const RECORD_PAGE_SIZE = 60;
 const LISTING_ANALYTICS_METRICS = [
   { key: "views", label: "Views", icon: "◉" },
+  { key: "impressions", label: "Impressions", icon: "◎" },
   { key: "clicks", label: "Clicks", icon: "↗" },
   { key: "favorites", label: "Favorites", icon: "♡" },
   { key: "likes", label: "Likes", icon: "♥" },
