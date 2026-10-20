@@ -1103,7 +1103,7 @@ const FIELD_LABEL_EXPLANATIONS = {
   "End date (optional)": "The last date the discount should run. Leave blank if you have not chosen an end date. The tracker records the date; you still need to set or end the promotion on the marketplace.",
   "Notes (optional)": "A reminder that explains this promotion, such as its campaign name, reason, or where you will activate it. Example: ‘Holiday weekend; set the same 10% discount in Etsy and Shopify.’",
   "Date completed": "The date the order refund or return was processed. Use the date shown in your payment or marketplace record.",
-  "Activity": "Choose the kind of listing activity you are recording. Example: choose Views for page visits, Favorites for saves, or Watches for watchers. These numbers are entered manually, not imported.",
+  "Activity": "Choose the kind of listing activity you are recording. Example: choose Impressions for times the marketplace showed your listing, Views for page visits, Favorites for saves, or Watches for watchers. These numbers are entered manually, not imported.",
   Count: "Enter the count for the selected activity and date. You can record fractional values when they are useful for your tracking.",
   "Note (optional)": "Record where this activity number came from or what changed. Example: ‘Copied from Etsy stats at the end of the day.’",
   Product: "Choose the finished product you are making. The tracker uses its saved recipe to calculate material use and adds the completed quantity to inventory.",
@@ -2453,6 +2453,7 @@ export default function App() {
   const [analyticsEntryMetrics, setAnalyticsEntryMetrics] = useState({});
   const [analyticsEntryNote, setAnalyticsEntryNote] = useState("");
   const [analyticsBulkRows, setAnalyticsBulkRows] = useState({});
+  const analyticsSaveLock = useRef(false);
   const [orderStatusFilter, setOrderStatusFilter] = useState("All");
   const [showArchivedOrders, setShowArchivedOrders] = useState(false);
   const [showArchivedNotes, setShowArchivedNotes] = useState(false);
@@ -4703,6 +4704,7 @@ export default function App() {
     const channels = listingAnalyticsChannels(selected);
     const chosenMarketplace = marketplace || (analyticsMarketplaceFilter !== "All" && channels.includes(analyticsMarketplaceFilter) ? analyticsMarketplaceFilter : channels[0] || "");
     const now = new Date();
+    analyticsSaveLock.current = false;
     setAnalyticsEntryMode(mode);
     setAnalyticsEntryListingId(selected.id);
     setAnalyticsEntryMarketplace(chosenMarketplace);
@@ -4746,10 +4748,11 @@ export default function App() {
     };
   };
   const saveAnalyticsEntry = () => {
+    if (!analyticsEntryMode || analyticsSaveLock.current) return;
     const date = parseDateInput(analyticsEntryDate);
     if (!date) { Alert.alert("Check the recording date", "Enter a valid date for when you checked the marketplace."); return; }
     if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(String(analyticsEntryTime || ""))) { Alert.alert("Check the recording time", "Enter a time in 24-hour HH:MM format, such as 14:30."); return; }
-    const metricKeys = ["views", "clicks", "favorites", "likes", "watchers", "offers"];
+    const metricKeys = LISTING_ANALYTICS_METRICS.map(({ key }) => key);
     const reports = [];
     if (analyticsEntryMode === "single") {
       const listing = db.listings.find((item) => item.id === analyticsEntryListingId && listingAnalyticsCanRecord(item));
@@ -4780,7 +4783,9 @@ export default function App() {
       }
       if (!reports.length) { Alert.alert("Nothing to save", "Enter at least one metric for a listing in this marketplace."); return; }
     }
+    analyticsSaveLock.current = true;
     persistListingAnalyticsReports(reports);
+    setRecordActionNotice(`${reports.length} analytics ${reports.length === 1 ? "check" : "checks"} saved.`);
     setAnalyticsEntryMode("");
   };
 
