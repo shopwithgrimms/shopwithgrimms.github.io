@@ -268,6 +268,7 @@ const PAGE_ICON_NAMES = {
   Finances: "finances",
   Calendar: "calendar",
   Ideas: "ideas",
+  Notes: "notes",
   Audit: "audit",
   Suppliers: "suppliers",
   "Help & FAQ": "help",
@@ -286,6 +287,7 @@ const RECORD_ICON_NAMES = {
   idea: "ideas",
   supplier: "suppliers",
   restock: "components",
+  note: "notes",
 };
 const ICON_PATHS = {
   dashboard: ["M3 3h8v8H3z", "M13 3h8v5h-8z", "M13 10h8v11h-8z", "M3 13h8v8H3z"],
@@ -298,6 +300,8 @@ const ICON_PATHS = {
   reviews: ["m12 3 2.7 5.5 6.1.9-4.4 4.3 1 6.1-5.4-2.9-5.4 2.9 1-6.1-4.4-4.3 6.1-.9L12 3Z"],
   finances: ["M12 2v20", "M17 6H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"],
   calendar: ["M4 5h16v16H4z", "M8 3v4", "M16 3v4", "M4 9h16", "M8 13h2", "M14 13h2", "M8 17h2"],
+  notes: ["M7 3h8l4 4v14H7z", "M15 3v5h4", "M10 12h6", "M10 16h6"],
+  pin: ["M16 4l4 4", "M14 6l4 4", "M8 12l4 4", "m6 18 5-5", "M16 4l-3 7 3 3 7-3"],
   ideas: ["M9 18h6", "M10 22h4", "M8.2 14.5a7 7 0 1 1 7.6 0c-.9.6-1.3 1.2-1.4 2.5h-4.8c-.1-1.3-.5-1.9-1.4-2.5Z"],
   audit: ["M4 4h16v16H4z", "M8 9h8", "M8 13h5", "M8 17h8"],
   suppliers: ["M3 7h11v11H3z", "M14 11h4l3 3v4h-7z", "M7 18.5a1.5 1.5 0 1 0 0 .1", "M18 18.5a1.5 1.5 0 1 0 0 .1"],
@@ -310,7 +314,7 @@ const ICON_PATHS = {
 };
 const ICON_FALLBACKS = {
   dashboard: "▦", components: "⬡", products: "□", listings: "▤", analytics: "⌁", orders: "▣",
-  production: "⚒", reviews: "☆", finances: "$", calendar: "▦", ideas: "✧", audit: "✓",
+  production: "⚒", reviews: "☆", finances: "$", calendar: "▦", ideas: "✧", notes: "▤", pin: "📌", audit: "✓",
   suppliers: "↗", help: "?", settings: "⚙", mail: "✉", menu: "☰", plus: "+", search: "⌕",
 };
 function AppIcon({ name, size = 18, color = COLORS.muted, strokeWidth = 1.8 }) {
@@ -363,6 +367,7 @@ const EMPTY_DB = {
   tasks: [],
   events: [],
   ideas: [],
+  notes: [],
   suppliers: [],
   productions: [],
   componentTransactions: [],
@@ -380,7 +385,7 @@ const EMPTY_DB = {
   nextOrderSku: 1,
 };
 
-const RECORD_COLLECTIONS = ["components", "products", "listings", "orders", "deletedOrders", "incomes", "reviews", "expenses", "tasks", "events", "ideas", "suppliers", "productions", "componentTransactions", "productTransactions", "purchases", "timeSessions", "timerSessions", "workPlans"];
+const RECORD_COLLECTIONS = ["components", "products", "listings", "orders", "deletedOrders", "incomes", "reviews", "expenses", "tasks", "events", "ideas", "notes", "suppliers", "productions", "componentTransactions", "productTransactions", "purchases", "timeSessions", "timerSessions", "workPlans"];
 const DROPDOWN_ATTRIBUTE_FIELDS = { colors: "colors", materials: "materials", sizes: "sizes", genders: "gender" };
 
 const DROPDOWN_SETS = [
@@ -400,6 +405,7 @@ const DROPDOWN_SETS = [
   { key: "paymentMethods", label: "Payment methods" },
   { key: "shippingMethods", label: "Shipping and delivery methods" },
   { key: "supplierCategories", label: "Supplier categories" },
+  { key: "noteCategories", label: "Note categories" },
 ];
 
 const DEFAULT_DROPDOWN_OPTIONS = {
@@ -420,6 +426,7 @@ const DEFAULT_DROPDOWN_OPTIONS = {
   paymentMethods: ["Cash", "Credit or debit card", "Etsy Payments", "Shopify Payments", "PayPal", "Venmo", "Zelle", "Other"],
   shippingMethods: ["USPS Ground Advantage", "USPS Priority Mail", "UPS", "FedEx", "Local pickup", "Digital delivery", "Other"],
   supplierCategories: ["Materials", "Packaging", "Tools and equipment", "Services", "Other"],
+  noteCategories: ["General", "Research", "Plans", "Diary", "Product ideas", "Customer and order notes", "Marketing", "Finance"],
 };
 
 const NAV_ITEMS = [
@@ -443,6 +450,7 @@ const MORE_ITEMS = [
   ["Finances", "FN", "Sales, costs, and expenses"],
   ["Calendar", "CL", "Tasks, events, shifts, and business dates"],
   ["Ideas", "ID", "Product ideas and work stages"],
+  ["Notes", "NT", "Research, plans, diary entries, and business notes"],
   ["Audit", "AU", "Review saved changes and inventory history"],
   ["Suppliers", "SP", "Supplier details and notes"],
   ["Help & FAQ", "HQ", "Instructions, common questions, and data help"],
@@ -450,7 +458,7 @@ const MORE_ITEMS = [
 ];
 
 const SIDEBAR_GROUPS = [
-  { label: "WORKSPACE", pages: ["Dashboard", "Components", "Products"] },
+  { label: "WORKSPACE", pages: ["Dashboard", "Components", "Products", "Notes"] },
   { label: "SALES", pages: ["Listings", "Listing Analytics", "Orders", "Reviews"] },
   { label: "OPERATIONS", pages: ["Production", "Finances", "Calendar", "Ideas", "Audit", "Suppliers"] },
   { label: "SUPPORT", pages: ["Help & FAQ"] },
@@ -987,6 +995,7 @@ function createFormDefaults(type, record, defaultLowStock, defaults) {
   if (type === "task") { base.priority = (defaults && defaults.defaultTaskPriority) || "Normal"; base.dueDate = TODAY; }
   if (type === "event") { base.date = TODAY; base.kind = (defaults && defaults.defaultEventType) || "Deadline"; }
   if (type === "workPlan") { base.title = "Work block"; base.date = TODAY; base.startTime = "9:00 AM"; base.endTime = "12:00 PM"; }
+  if (type === "note") { base.date = TODAY; base.category = ((defaults && defaults.noteCategories) || DEFAULT_DROPDOWN_OPTIONS.noteCategories)[0] || "General"; base.tags = ""; base.body = ""; base.pinned = false; }
   const result = { ...base, ...(record || {}) };
   if (type === "order" && record && !result.listingId && record.items && record.items[0]) result.listingId = record.items[0].listingId || "";
   if (type === "product") result.description = Array.from(new Set([record && record.description, record && record.notes].map((value) => String(value || "").trim()).filter(Boolean))).join("\n\n");
@@ -1144,6 +1153,7 @@ const FORM_INTRO = {
   task: "Write down a next step, set a due date, and check it off when it is done.",
   event: "Add an important date such as a market, launch, or payment deadline.",
   idea: "Capture a product idea and its inspiration so you can return to it later.",
+  note: "Save dated research, plans, diary entries, and other business notes. Pin important notes and organize them by category.",
   supplier: "Keep a supplier's contact details and buying notes together.",
   workPlan: "Reserve a date and time for a work block, then track it against your timesheet.",
 };
@@ -1152,7 +1162,7 @@ const FIELD_GROUPS = [
   { title: "Start here", description: "Name the record and connect it to the right item.", keys: ["name", "title", "description", "productId", "componentId", "orderId", "customer", "contact", "website"] },
   { title: "Price, stock, and shipping", description: "Amounts help the tracker estimate stock, costs, and shipping.", keys: ["quantity", "inventory", "lowStock", "unit", "cost", "purchaseCost", "shippingCost", "price", "unitPrice", "extraFees", "packageWeight", "packageWeightUnit", "amount", "stars"] },
   { title: "Item and sale details", description: "Add the details you will want to see while working or selling.", keys: ["category", "expenseType", "colors", "materials", "sizes", "gender", "condition", "listingSku", "orderSku", "trackingNumber", "trackingCarrier", "marketplaces", "marketplace", "status", "paymentMethod", "shippingMethod", "priority", "kind", "percent", "startTime", "endTime", "date", "dueDate", "startDate", "relistDate", "endDate"] },
-  { title: "Notes and links", description: "Keep the useful context close to this record.", keys: ["notes", "reviewText", "publicResponse", "url", "trackingUrl"] },
+  { title: "Notes and links", description: "Keep the useful context close to this record.", keys: ["notes", "body", "tags", "reviewText", "publicResponse", "url", "trackingUrl"] },
 ];
 const groupFields = (fields) => {
   const assigned = new Set();
@@ -1811,6 +1821,7 @@ function RecordModal({ visible, type, record, db, prefill, onClose, onSave, onMa
     task: "Business task",
     event: "Calendar event",
     idea: "Product idea",
+    note: "Business note",
     supplier: "Supplier",
     workPlan: "Planned work block",
   };
@@ -1944,6 +1955,13 @@ function RecordModal({ visible, type, record, db, prefill, onClose, onSave, onMa
       { key: "status", label: "Board column", options: ["Ideas", "To make", "In progress", "Done"].map((value) => ({ label: value, value })) },
       { key: "notes", label: "Idea notes", multiline: true, placeholder: "Colors, materials, inspiration..." },
     ],
+    note: [
+      { key: "title", label: "Note title", required: true, placeholder: "Example: Holiday market research" },
+      { key: "date", label: "Date", date: true, required: true },
+      { key: "category", label: "Category", optionSet: "noteCategories", options: optionsFor("noteCategories") },
+      { key: "tags", label: "Tags (optional)", placeholder: "Example: holiday, pricing, Etsy" },
+      { key: "body", label: "Note", multiline: true, placeholder: "Write your research, plan, diary entry, or business note here..." },
+    ],
     supplier: [
       { key: "name", label: "Supplier name", required: true, placeholder: "Supplier or shop name" },
       { key: "category", label: "Supplier category", optionSet: "supplierCategories", options: optionsFor("supplierCategories") },
@@ -1961,7 +1979,7 @@ function RecordModal({ visible, type, record, db, prefill, onClose, onSave, onMa
   };
   const fields = (fieldsByType[type] || []).filter((field) => !(type === "product" && record && field.key === "inventory"));
   const formSections = groupFields(fields);
-  const initialValuesJson = JSON.stringify({ type, record: record || null, defaultLowStock: db.defaultLowStock, defaultTaskPriority: db.defaultTaskPriority, defaultEventType: db.defaultEventType, nextProductSku: db.nextProductSku, products: db.products, productSkuReferences: productSkuReferences(db), nextListingSku: db.nextListingSku, nextOrderSku: db.nextOrderSku, prefill: prefill || null });
+  const initialValuesJson = JSON.stringify({ type, record: record || null, defaultLowStock: db.defaultLowStock, defaultTaskPriority: db.defaultTaskPriority, defaultEventType: db.defaultEventType, noteCategories: db.dropdownOptions && db.dropdownOptions.noteCategories, nextProductSku: db.nextProductSku, products: db.products, productSkuReferences: productSkuReferences(db), nextListingSku: db.nextListingSku, nextOrderSku: db.nextOrderSku, prefill: prefill || null });
   const [values, setValues] = useState(() => {
     const initial = JSON.parse(initialValuesJson);
     return { ...createFormDefaults(initial.type, initial.record, initial.defaultLowStock, initial), ...(initial.prefill || {}) };
@@ -2105,10 +2123,12 @@ const HELP_COPY = {
   Suppliers: ["Use this directory for the supplier or shop name, contact method, website, category, and your purchasing notes. Reuse the same supplier name on component and restock records so you can recognize the relationship. Notes can hold useful buying details such as minimum order, package size, or typical delivery time; this is not a purchase-order system.", "Example: add ‘Northside Bead Co.’ with its order email and website, then note ‘Minimum order $25; brass chain usually ships in 3–5 days.’ Use that same name when recording a clasp restock."],
   Settings: ["Business profile stores the shop name, display currency, and defaults. Theme and colors affect appearance; marketplace options control the channel choices in listings and orders. Fee rules are estimates: the percent applies to the item subtotal and the fixed amount is added once per order. Data and backups lets you copy backup text, restore it, clear business records, or perform a full factory reset. Records stay in this browser on this device; there is no login or cloud sync yet.", "Example: for an illustrative 6.5% fee plus $0.30 per order on a $40 sale, the estimate is $2.90 ($2.60 + $0.30), before any extra fee. These are sample numbers only, not a marketplace’s actual rates. Check the channel’s current fee schedule and enter its real rules."],
   "Help & FAQ": ["Search the guide for setup steps, supplier choices, purchase dates, backup and restore instructions, and answers about how tracker data is stored. Use the page links to jump straight to a feature.", "Example: search for ‘purchase date’ to learn how to enter the date on a restock, or search for ‘backup’ to copy a text backup and restore it later."],
+  Notes: ["Save dated research, plans, diary entries, and other business notes. Search the note titles and text, filter by category, add tags, and pin notes so important ones stay at the top. Use Archive to hide an old note and restore it later. Manage the category choices in Settings → Dropdown choices. Notes are part of the normal saved tracker and its text backup.", "Example: create a Research note dated today, add tags such as ‘holiday market, pricing,’ paste your findings, and pin it while you compare venues. Create other categories such as Product launch or Personal business journal in Settings."],
   More: ["All pages lists every part of the business tracker. On a wide screen, the organized side panel keeps these pages visible; on a smaller screen, open Pages in the header. The page descriptions tell you what records each tool uses.", "Example: open Suppliers to save a supplier’s email, or choose Settings to change your profile, fee estimates, backups, and reset options."],
 };
 
 const FAQ_ITEMS = [
+  { question: "Where can I save notes for my business?", answer: "Open Notes from the left navigation. Add as many dated notes as you need, organize them with categories and tags, search their text, and pin important ones. Notes are included in the normal tracker backup.", tags: "notes diary research plans pin category organize backup" },
   { question: "Where is my information saved?", answer: "The tracker saves automatically in this browser on this device. It does not currently create an online account or sync records between browsers. A private window, browser reset, or different device may not have the same records.", tags: "data storage device browser account login sync" },
   { question: "How do I make a backup I can paste later?", answer: "Open Settings → Data and backups → Export backup. The app shows your backup as text. Choose Copy backup text and keep the copied text somewhere private that you can find again. You can also select and copy all the text in the box.", tags: "backup export copy text save paste" },
   { question: "How do I restore a text backup?", answer: "Open Settings → Data and backups → Restore backup, paste the complete backup text, and choose Restore. Review the confirmation first. The app saves a local recovery copy of the current tracker before replacing it.", tags: "restore import paste backup recovery" },
@@ -2434,6 +2454,8 @@ export default function App() {
   const [analyticsBulkRows, setAnalyticsBulkRows] = useState({});
   const [orderStatusFilter, setOrderStatusFilter] = useState("All");
   const [showArchivedOrders, setShowArchivedOrders] = useState(false);
+  const [showArchivedNotes, setShowArchivedNotes] = useState(false);
+  const [noteCategoryFilter, setNoteCategoryFilter] = useState("All");
   const [inventoryHistoryExpanded, setInventoryHistoryExpanded] = useState(false);
   const [shiftTaskCreationMode, setShiftTaskCreationMode] = useState(false);
   const [financePeriod, setFinancePeriod] = useState("month");
@@ -3125,6 +3147,8 @@ export default function App() {
         update("events", { title: String(values.title || "").trim(), date: values.date || today, kind: values.kind || "Business event", notes: values.notes || "", done: record ? !!record.done : false, completedAt: record ? record.completedAt || null : null, archived: record ? !!record.archived : false });
       } else if (type === "idea") {
         update("ideas", { title: String(values.title || "").trim(), category: values.category || "", status: values.status || "Ideas", notes: values.notes || "", archived: record ? !!record.archived : false });
+      } else if (type === "note") {
+        update("notes", { title: String(values.title || "").trim(), date: values.date || today, category: values.category || "General", tags: String(values.tags || "").trim(), body: String(values.body || "").trim(), pinned: record ? !!record.pinned : false, archived: record ? !!record.archived : false });
       } else if (type === "supplier") {
         update("suppliers", { name: String(values.name || "").trim(), category: values.category || "Other", contact: values.contact || "", website: values.website || "", notes: values.notes || "", archived: record ? !!record.archived : false });
       } else if (type === "workPlan") {
@@ -5543,6 +5567,49 @@ export default function App() {
     </>;
   };
 
+  const renderNotes = () => {
+    const allNotes = db.notes || [];
+    const categories = Array.from(new Set([...(db.dropdownOptions.noteCategories || DEFAULT_DROPDOWN_OPTIONS.noteCategories), ...allNotes.map((note) => note.category).filter(Boolean)]));
+    const query = search.trim().toLowerCase();
+    const notes = allNotes.filter((note) => !!note.archived === showArchivedNotes)
+      .filter((note) => noteCategoryFilter === "All" || note.category === noteCategoryFilter)
+      .filter((note) => !query || [note.title, note.body, note.category, note.tags, note.date, dateLabel(note.date)].join(" ").toLowerCase().includes(query))
+      .sort((left, right) => Number(!!right.pinned) - Number(!!left.pinned) || String(right.date || "").localeCompare(String(left.date || "")) || String(right.updatedAt || right.createdAt || "").localeCompare(String(left.updatedAt || left.createdAt || "")));
+    const activeNotes = allNotes.filter((note) => !note.archived);
+    const toggleNotePin = (note) => setData((old) => {
+      const now = new Date().toISOString();
+      return { ...old, notes: (old.notes || []).map((item) => item.id === note.id ? { ...item, pinned: !item.pinned, updatedAt: now, auditLog: (item.auditLog || []).concat([{ id: uid("audit"), action: item.pinned ? "Note unpinned" : "Note pinned", date: now, changes: [{ field: "pinned", from: !!item.pinned, to: !item.pinned }] }]) } : item) };
+    });
+    return <>
+      <ScreenDashboardHeader title="Your business notebook" description="Keep research, plans, diary entries, and the everyday details of running your business together. Notes save with your tracker data and are included in text backups." metrics={[
+        { label: "Active notes", value: String(activeNotes.length) },
+        { label: "Pinned", value: String(activeNotes.filter((note) => note.pinned).length) },
+        { label: "Categories", value: String(categories.length) },
+      ]} actions={[
+        { label: "＋ New note", onPress: () => beginAdd("note") },
+        { label: showArchivedNotes ? "Show active notes" : "Archived notes", onPress: () => setShowArchivedNotes((value) => !value), quiet: true },
+      ]} />
+      <View style={styles.sectionHeadingRow}><Text style={styles.sectionTitle}>{showArchivedNotes ? "Archived notes" : "Browse notes"}</Text><Text style={styles.subtle}>{notes.length} {notes.length === 1 ? "note" : "notes"}</Text></View>
+      <View style={styles.actionRow}>
+        {["All", ...categories].map((category) => <Action key={category} label={category === "All" ? "All categories" : category} quiet={noteCategoryFilter !== category} onPress={() => setNoteCategoryFilter(category)} />)}
+      </View>
+      {notes.length ? notes.map((note) => <Card key={note.id}>
+        <View style={styles.cardTop}><View style={styles.flex}>
+          <View style={styles.noteTitleRow}><Text style={styles.recordTitle}>{note.title || "Untitled note"}</Text>{note.pinned ? <AppIcon name="pin" size={15} color={COLORS.wine} /> : null}</View>
+          <Text style={styles.recordMeta}>{dateLabel(note.date)} · {note.category || "General"}</Text>
+          {note.tags ? <Text style={styles.recordMeta}>Tags: {note.tags}</Text> : null}
+        </View>{note.pinned ? <Pill text="Pinned" tone="amber" /> : null}</View>
+        {note.body ? <Text style={styles.bodyText}>{note.body}</Text> : <Text style={styles.fieldHint}>No note text yet.</Text>}
+        <View style={styles.actionRow}>
+          <Action label="Edit" onPress={() => beginEdit("note", note)} />
+          {!showArchivedNotes ? <Action label={note.pinned ? "Unpin" : "Pin"} quiet onPress={() => toggleNotePin(note)} /> : null}
+          {showArchivedNotes ? <Action label="Restore" quiet onPress={() => restoreRecord("notes", note)} /> : <Action label="Archive" quiet onPress={() => archiveRecord("notes", note, "note")} />}
+          <Action label="Delete" quiet onPress={() => permanentlyDeleteRecord("notes", note, "note")} />
+        </View>
+      </Card>) : <EmptyState title={showArchivedNotes ? "No archived notes" : query || noteCategoryFilter !== "All" ? "No notes match" : "Start your business notebook"} body={showArchivedNotes ? "Notes you archive appear here. Restore one to bring it back to your active notebook." : query || noteCategoryFilter !== "All" ? "Try another search or choose a different category." : "Create a research note, business plan, diary entry, or anything else you want to keep. You can date, search, pin, and organize every note."} action={!showArchivedNotes && !query ? "＋ Create your first note" : undefined} onPress={() => beginAdd("note")} />}
+    </>;
+  };
+
   const renderSettings = () => {
     const selectedTheme = db.themeName === CUSTOM_THEME_NAME
       ? { name: CUSTOM_THEME_NAME, mode: (db.customTheme || DEFAULT_CUSTOM_THEME).mode || "dark", colors: makeCustomThemeColors(db.customTheme) }
@@ -5553,6 +5620,7 @@ export default function App() {
       ...db.listings.filter((x) => x.archived).map((x) => ({ ...x, group: "listings", label: "Listing" })),
       ...db.tasks.filter((x) => x.archived).map((x) => ({ ...x, group: "tasks", label: "Task" })),
       ...db.events.filter((x) => x.archived).map((x) => ({ ...x, group: "events", label: "Event" })),
+      ...db.notes.filter((x) => x.archived).map((x) => ({ ...x, group: "notes", label: "Note" })),
       ...db.suppliers.filter((x) => x.archived).map((x) => ({ ...x, group: "suppliers", label: "Supplier" })),
     ];
     const toggleSection = (key) => setSettingsSections((old) => ({ ...old, [key]: !old[key] }));
@@ -5649,7 +5717,7 @@ export default function App() {
           <Text style={styles.bodyText}>Export a shareable copy, restore a validated backup, or recover the last on-device copy. Before restoring, the current tracker is saved as a recovery copy. Exported backups contain all saved records; share them carefully.</Text>
           <View style={styles.actionRow}><Action label="Export backup" onPress={exportBackup} /><Action label="Restore backup" quiet onPress={showBackup} /><Action label="Recover last copy" quiet onPress={restoreLocalRecovery} /></View>
         </Card>
-        <Card><Text style={styles.cardTitle}>Clear business records</Text><Text style={styles.bodyText}>This clears products, stock, listings, sales, reviews, expenses, tasks, history, and your business name. Your theme and app preferences stay. A recovery copy is saved first.</Text><View style={styles.actionRow}><Action label="Clear all business records…" quiet onPress={() => { setClearConfirmText(""); setClearDataOpen(true); }} /></View></Card>
+        <Card><Text style={styles.cardTitle}>Clear business records</Text><Text style={styles.bodyText}>This clears products, stock, listings, sales, notes, reviews, expenses, tasks, history, and your business name. Your theme and app preferences stay. A recovery copy is saved first.</Text><View style={styles.actionRow}><Action label="Clear all business records…" quiet onPress={() => { setClearConfirmText(""); setClearDataOpen(true); }} /></View></Card>
         <Card><Text style={styles.cardTitle}>Reset app to factory defaults</Text><Text style={styles.bodyText}>Remove all business records, profile details, theme choices, settings, and local recovery files. This cannot be undone. Export a backup first if you may need your data.</Text><View style={styles.actionRow}><Action label="Reset app to factory defaults…" quiet onPress={() => { setFactoryResetConfirmText(""); setFactoryResetOpen(true); }} /></View></Card>
         <Text style={styles.fieldHint}>No account or cloud sync is connected yet. Records stay on this device in unencrypted local storage, and exported backups contain all saved records. Share backups carefully. Secure sign-up and cross-device sync require a backend.</Text>
       </SettingsAccordion>
@@ -5717,6 +5785,7 @@ export default function App() {
       case "Orders": return renderOrders();
       case "Reviews": return renderReviews();
       case "Ideas": return renderIdeas();
+      case "Notes": return renderNotes();
       case "Finances": return renderFinances();
       case "Calendar": return renderCalendar();
       case "Audit": return renderAudit();
@@ -5791,9 +5860,9 @@ export default function App() {
       {wideLayout ? <View style={styles.sidebar}><ScrollView style={styles.sidebarScroll} contentContainerStyle={styles.sidebarContent} showsVerticalScrollIndicator={false}>{renderNavigationLinks()}</ScrollView><View style={styles.sidebarFooter}>{renderSettingsShortcut()}</View></View> : null}
       <View style={styles.contentPane}>
       {screen !== "More" && screen !== "Dashboard" && screen !== "Settings" && screen !== "Help & FAQ" && (
-        <View style={styles.searchWrap}><AppIcon name="search" size={17} color={COLORS.muted} /><TextInput value={search} onChangeText={setSearch} placeholder={"Search " + (isFulfillmentPage ? "products" : screen.toLowerCase())} placeholderTextColor={COLORS.placeholder} style={styles.searchInput} returnKeyType="search" /><Pressable onPress={() => setSearch("")}><Text style={styles.searchClear}>×</Text></Pressable></View>
+        <View style={styles.searchWrap}><AppIcon name="search" size={17} color={COLORS.muted} /><TextInput value={search} onChangeText={setSearch} placeholder={screen === "Notes" ? "Search notes, plans, diary entries, tags…" : "Search " + (isFulfillmentPage ? "products" : screen.toLowerCase())} placeholderTextColor={COLORS.placeholder} style={styles.searchInput} returnKeyType="search" /><Pressable onPress={() => setSearch("")}><Text style={styles.searchClear}>×</Text></Pressable></View>
       )}
-      <View style={styles.screenHeading}><View style={styles.flex}><Text style={styles.screenTitle}>{screenTitle}</Text>{screen !== "Dashboard" ? <Text style={styles.screenSubtitle}>{isFulfillmentPage ? "Products in this fulfillment status" : screen === "Production" ? "Turn materials into finished inventory" : screen === "Ideas" ? "Save and move product ideas through your work" : screen === "Listing Analytics" ? "Record marketplace stats and review performance" : screen === "Help & FAQ" ? "Instructions and answers for your business tools" : "A clear view of your handmade business"}</Text> : <Text style={styles.screenSubtitle}>Your handmade business, in one place</Text>}</View>
+      <View style={styles.screenHeading}><View style={styles.flex}><Text style={styles.screenTitle}>{screenTitle}</Text>{screen !== "Dashboard" ? <Text style={styles.screenSubtitle}>{isFulfillmentPage ? "Products in this fulfillment status" : screen === "Production" ? "Turn materials into finished inventory" : screen === "Ideas" ? "Save and move product ideas through your work" : screen === "Notes" ? "Research, plans, diary entries, and business notes" : screen === "Listing Analytics" ? "Record marketplace stats and review performance" : screen === "Help & FAQ" ? "Instructions and answers for your business tools" : "A clear view of your handmade business"}</Text> : <Text style={styles.screenSubtitle}>Your handmade business, in one place</Text>}</View>
         <View style={styles.headerActions}>
           {navigationStack.length > 1 ? <Pressable accessibilityRole="button" accessibilityLabel="Go back" style={styles.headerAdd} onPress={navigateBack}><Text style={styles.headerAddText}>‹ Back</Text></Pressable> : null}
           <Pressable accessibilityLabel={screenTitle + " help"} style={styles.helpButton} onPress={() => setHelpOpen(true)}><AppIcon name="help" size={17} color={COLORS.wine} /></Pressable>
@@ -5905,7 +5974,7 @@ export default function App() {
               {[
                 ["component", "CM", "Component"], ["product", "PD", "Product"], ["listing", "LS", "Listing"],
                 ["order", "OR", "Sale"], ["review", "RV", "Buyer review"], ["expense", "FN", "Expense"], ["task", "TK", "Task"],
-                ["event", "CL", "Calendar event"], ["workPlan", "TM", "Planned work"], ["idea", "ID", "Product idea"], ["supplier", "SP", "Supplier"], ["restock", "RS", "Restock"],
+                ["event", "CL", "Calendar event"], ["workPlan", "TM", "Planned work"], ["idea", "ID", "Product idea"], ["note", "NT", "Business note"], ["supplier", "SP", "Supplier"], ["restock", "RS", "Restock"],
               ].map(([type, _icon, label]) => (
                 <Pressable key={type} style={styles.chooserOption} onPress={() => { setAddChooserOpen(false); beginAdd(type); }}>
                   <View style={styles.chooserIcon}><AppIcon name={RECORD_ICON_NAMES[type] || "dashboard"} size={17} color={COLORS.wine} /></View><Text style={styles.chooserLabel}>{label}</Text>
@@ -6107,6 +6176,7 @@ function makeStyles() { return StyleSheet.create({
   settingsAccordionContent: { paddingHorizontal: 11, paddingBottom: 10, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: COLORS.line },
   cardTitle: { color: COLORS.ink, fontSize: 14, fontWeight: "700", marginBottom: 6 },
   cardTop: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start", gap: 8 },
+  noteTitleRow: { flexDirection: "row", alignItems: "center", gap: 6 },
   compactOrderCard: { padding: 12 },
   compactComponentCard: { padding: 12, marginBottom: 8 },
   componentCardActions: { flexDirection: "row", alignItems: "center", flexWrap: "wrap", gap: 6, marginTop: 9 },
