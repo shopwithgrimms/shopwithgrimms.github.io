@@ -1868,7 +1868,7 @@ function RecordModal({ visible, type, record, db, prefill, onClose, onSave, onMa
       { key: "description", label: "Product description", multiline: true, placeholder: "Describe the finished item, materials, colors, and anything you want to remember" },
       { key: "condition", label: "Condition or item type", options: CONDITION_OPTIONS },
       { key: "price", label: "Selling price", number: true, required: true, placeholder: "0.00" },
-      { key: "inventory", label: "Starting finished inventory", number: true, placeholder: "0" },
+      { key: "inventory", label: record ? "Finished inventory on hand" : "Starting finished inventory", number: true, placeholder: "0" },
       { key: "packageWeight", label: "Final packaged weight", number: true, placeholder: "Example: 4.5" },
       { key: "packageWeightUnit", label: "Package weight unit", options: WEIGHT_UNITS },
     ],
@@ -1978,7 +1978,7 @@ function RecordModal({ visible, type, record, db, prefill, onClose, onSave, onMa
       { key: "notes", label: "Notes", multiline: true, placeholder: "What you plan to work on" },
     ],
   };
-  const fields = (fieldsByType[type] || []).filter((field) => !(type === "product" && record && field.key === "inventory"));
+  const fields = (fieldsByType[type] || []).filter((field) => !(type === "product" && record && record.archived && field.key === "inventory"));
   const formSections = groupFields(fields);
   const initialValuesJson = JSON.stringify({ type, record: record || null, defaultLowStock: db.defaultLowStock, defaultTaskPriority: db.defaultTaskPriority, defaultEventType: db.defaultEventType, noteCategories: db.dropdownOptions && db.dropdownOptions.noteCategories, nextProductSku: db.nextProductSku, products: db.products, productSkuReferences: productSkuReferences(db), nextListingSku: db.nextListingSku, nextOrderSku: db.nextOrderSku, prefill: prefill || null });
   const [values, setValues] = useState(() => {
@@ -2038,9 +2038,15 @@ function RecordModal({ visible, type, record, db, prefill, onClose, onSave, onMa
       normalizedValues.startTime = normalizedStartTime;
       normalizedValues.endTime = normalizedEndTime;
     }
-    if (onSave(type, normalizedValues, record) === false) {
+    try {
+      if (onSave(type, normalizedValues, record) === false) {
+        submitLock.current = false;
+        setSubmitting(false);
+      }
+    } catch (_error) {
       submitLock.current = false;
       setSubmitting(false);
+      setError("The record could not be saved. Your changes are still here; please try again.");
     }
   };
   return (
@@ -2843,6 +2849,8 @@ export default function App() {
     let parsedRecipe = [];
     let productSku = "";
     let recipeInventoryAdjustments = [];
+    let inventoryBefore = 0;
+    let inventoryBeingTracked = 0;
     let saleProduct = null;
     let saleListing = null;
     let saleQty = 0;
@@ -2875,16 +2883,17 @@ export default function App() {
       });
       parsedRecipe = Array.from(combinedRecipe.values());
       const existingProduct = record ? db.products.find((item) => item.id === record.id) : null;
-      const inventoryBeingTracked = existingProduct
-        ? (active(existingProduct) ? Math.max(0, Number(existingProduct.inventory) || 0) : 0)
+      inventoryBefore = existingProduct && active(existingProduct) ? Math.max(0, Number(existingProduct.inventory) || 0) : 0;
+      inventoryBeingTracked = existingProduct
+        ? (active(existingProduct) ? Math.max(0, asNumber(values.inventory, inventoryBefore)) : 0)
         : Math.max(0, asNumber(values.inventory, 0));
-      const materialNeedsFor = (recipe) => {
+      const materialNeedsFor = (recipe, inventory) => {
         const needs = new Map();
-        (recipe || []).forEach((part) => needs.set(part.componentId, (needs.get(part.componentId) || 0) + Math.max(0, Number(part.quantity) || 0) * inventoryBeingTracked));
+        (recipe || []).forEach((part) => needs.set(part.componentId, (needs.get(part.componentId) || 0) + Math.max(0, Number(part.quantity) || 0) * inventory));
         return needs;
       };
-      const previousNeeds = materialNeedsFor(existingProduct && active(existingProduct) ? existingProduct.recipe : []);
-      const nextNeeds = materialNeedsFor(parsedRecipe);
+      const previousNeeds = materialNeedsFor(existingProduct && active(existingProduct) ? existingProduct.recipe : [], inventoryBefore);
+      const nextNeeds = materialNeedsFor(parsedRecipe, inventoryBeingTracked);
       const componentIds = new Set([...previousNeeds.keys(), ...nextNeeds.keys()]);
       recipeInventoryAdjustments = Array.from(componentIds).map((componentId) => ({
         componentId,
@@ -2901,7 +2910,7 @@ export default function App() {
         const availableComponent = materialShortage.component && active(materialShortage.component) ? materialShortage.component : null;
         const componentName = availableComponent ? availableComponent.name : "a required component";
         const available = Number(availableComponent && availableComponent.quantity) || 0;
-        Alert.alert("Not enough materials for finished stock", "This recipe change needs " + materialShortage.quantity + " more " + (availableComponent && availableComponent.unit || "units") + " of " + componentName + " for the " + inventoryBeingTracked + " finished product units you already have. Only " + available + " are available. Restock the component before changing this recipe.");
+        Alert.alert("Not enough materials for finished stock", "These product changes need " + materialShortage.quantity + " more " + (availableComponent && availableComponent.unit || "units") + " of " + componentName + " for the " + inventoryBeingTracked + " finished units you want to keep in stock. Only " + available + " are available. Restock the component or lower the finished inventory before saving.");
         return false;
       }
     }
@@ -3010,7 +3019,7 @@ export default function App() {
       } else if (type === "product") {
         const sku = record ? (productSku || record.sku) : (productSku || "PROD-" + String(firstAvailableProductSkuNumber(old)).padStart(3, "0"));
         const productId = record ? record.id : uid("product");
-        const startingInventory = record ? Number((old.products.find((x) => x.id === record.id) || {}).inventory) || 0 : Math.max(0, asNumber(values.inventory, 0));
+        const startingInventory = inventoryBeingTracked;
         update("products", {
           id: productId,
           name: String(values.name || "").trim(), sku, category: values.category || "Other",
@@ -3029,13 +3038,18 @@ export default function App() {
           });
           next.componentTransactions = (old.componentTransactions || []).concat(recipeInventoryAdjustments.map((adjustment) => ({
             id: uid("recipe-stock"), componentId: adjustment.componentId, productId, quantity: -adjustment.quantity,
-            kind: adjustment.quantity > 0 ? (isNew ? "Starting finished inventory materials" : "Materials used for recipe change") : "Materials returned after recipe change",
+            kind: adjustment.quantity > 0 ? (isNew ? "Starting finished inventory materials" : "Materials used for product inventory or recipe increase") : "Materials returned after product inventory or recipe decrease",
             date: new Date().toISOString(), note: Math.abs(adjustment.quantity) + " " + (adjustment.component && adjustment.component.unit || "units") + " for " + (inventoryBeingTracked || 0) + " finished " + String(values.name || record && record.name || "product").trim() + " units",
           })));
         }
-        if (isNew && startingInventory > 0) next.productTransactions = (old.productTransactions || []).concat([{
-          id: uid("opening"), productId, quantity: startingInventory, kind: "Opening balance", date: new Date().toISOString(), note: "Starting finished inventory",
-        }]);
+        const inventoryDelta = startingInventory - inventoryBefore;
+        if ((isNew && startingInventory > 0) || (!isNew && Math.abs(inventoryDelta) > 0.0000001)) {
+          next.productTransactions = (old.productTransactions || []).concat([{
+            id: uid(isNew ? "opening" : "inventory-adjustment"), productId, quantity: isNew ? startingInventory : inventoryDelta,
+            kind: isNew ? "Opening balance" : "Manual inventory adjustment", date: new Date().toISOString(),
+            note: isNew ? "Starting finished inventory" : "Finished inventory corrected while editing product",
+          }]);
+        }
       } else if (type === "listing") {
         const product = old.products.find((x) => x.id === values.productId);
         const marketplaces = Array.isArray(values.marketplaces) ? values.marketplaces : (values.marketplace ? [values.marketplace] : []);
@@ -3292,12 +3306,12 @@ export default function App() {
       });
       return;
     }
+    const linkedProductionBatches = key === "products" ? (db.productions || []).filter((batch) => batch.productId === record.id).length : 0;
     const references = key === "products" ? [
       db.listings.some((item) => item.productId === record.id) && "marketplace listings",
       db.orders.some((order) => (order.items || []).some((item) => item.productId === record.id)) && "sale history",
       (db.deletedOrders || []).some((order) => (order.items || []).some((item) => item.productId === record.id)) && "deleted sale audit history",
       db.reviews.some((review) => review.productId === record.id) && "buyer reviews",
-      db.productions.some((batch) => batch.productId === record.id) && "production batches",
     ].filter(Boolean) : key === "components" ? (() => {
       const sameSku = (left, right) => String(left || "").trim().toLowerCase() === String(right || "").trim().toLowerCase();
       const linkedByIdOrSku = (entry) => {
@@ -3323,16 +3337,19 @@ export default function App() {
     const productToDelete = key === "products" ? db.products.find((item) => item.id === record.id) : null;
     const productUnitsToReturn = productToDelete && active(productToDelete) ? Math.max(0, Number(productToDelete.inventory) || 0) : 0;
     const deleteMessage = key === "products" && productUnitsToReturn > 0
-      ? "This permanently deletes the unlinked product and returns the ingredients for its " + productUnitsToReturn + " unsold finished unit" + (productUnitsToReturn === 1 ? "" : "s") + " to component stock."
+      ? "This permanently deletes the product and returns the ingredients for its " + productUnitsToReturn + " unsold finished unit" + (productUnitsToReturn === 1 ? "" : "s") + " to component stock."
       : key === "products" && productToDelete && !active(productToDelete)
         ? "This permanently deletes the archived product. Its components were already returned when it was archived, so they will not be returned twice."
         : "This removes the record from this device and cannot be undone. Archived records can be restored until you delete them.";
+    const deleteMessageWithHistory = linkedProductionBatches
+      ? deleteMessage + " " + linkedProductionBatches + " past production batch" + (linkedProductionBatches === 1 ? "" : "es") + " and their saved product and recipe details will remain in Production history."
+      : deleteMessage;
     requestRecordConfirmation({
       title: "Permanently delete this " + label.toLowerCase() + "?",
-      message: deleteMessage,
+      message: deleteMessageWithHistory,
       confirmLabel: "Delete permanently",
       successMessage: key === "products"
-        ? "Product deleted. Ingredients from any remaining unsold finished stock were returned to component inventory."
+        ? "Product deleted. Ingredients from any remaining unsold finished stock were returned to component inventory." + (linkedProductionBatches ? " Its production history remains saved." : "")
         : label + " deleted from this browser.",
       onConfirm: () => setData((old) => {
         const next = {
