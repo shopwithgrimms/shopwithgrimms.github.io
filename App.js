@@ -2159,13 +2159,14 @@ function BulkEditModal({ visible, type, records = [], products = [], onClose, on
   }, [visible, type, records]);
   const updateDraft = (id, key, value) => setDrafts((old) => old.map((row) => row.id === id ? { ...row, [key]: value } : row));
   const sourceById = new Map((records || []).map((record) => [record.id, record]));
-  const visibleDrafts = type === "listing" ? drafts.filter((draft) => {
-    const listing = sourceById.get(draft.id);
-    if (!listing) return false;
-    if (listingStatusFilter === "Active" && listing.archived) return false;
-    if (listingStatusFilter === "Archived" && !listing.archived) return false;
-    return !selectedProductIds.length || selectedProductIds.includes(listing.productId);
-  }) : drafts;
+  const visibleDrafts = drafts.filter((draft) => {
+    const record = sourceById.get(draft.id);
+    if (!record) return false;
+    if (listingStatusFilter === "Active" && record.archived) return false;
+    if (listingStatusFilter === "Archived" && !record.archived) return false;
+    const productId = type === "listing" ? record.productId : record.id;
+    return !selectedProductIds.length || selectedProductIds.includes(productId);
+  });
   const productOptions = (products || []).map((product) => ({
     label: [product.name, product.sku, product.archived ? "Archived" : ""].filter(Boolean).join(" · "),
     value: product.id,
@@ -2185,23 +2186,23 @@ function BulkEditModal({ visible, type, records = [], products = [], onClose, on
       <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === "ios" ? "padding" : "height"}>
         <ScrollView contentContainerStyle={styles.formContent} keyboardShouldPersistTaps="handled">
           <View style={styles.infoBanner}><Text style={styles.infoBannerTitle}>Edit saved {label}s</Text><Text style={styles.infoBannerText}>Change names and descriptions here. Other product, listing, inventory, and sales details stay as they are.</Text></View>
-          {type === "listing" ? <>
-            <ChoiceChips label="Show listings" options={[
+          <>
+            <ChoiceChips label={"Show " + (type === "listing" ? "listings" : "products")} options={[
               { label: "All · " + (records || []).length, value: "All" },
               { label: "Active · " + (records || []).filter((record) => !record.archived).length, value: "Active" },
               { label: "Archived · " + (records || []).filter((record) => !!record.archived).length, value: "Archived" },
             ]} value={listingStatusFilter} onChange={setListingStatusFilter} />
-            <Field field={{ label: "Filter by product", options: productOptions, multiple: true, searchable: true, searchPlaceholder: "Search products", placeholder: "All products" }} value={selectedProductIds} onChange={setSelectedProductIds} />
+            <Field field={{ label: type === "listing" ? "Filter listings by product" : "Choose products to edit", options: productOptions, multiple: true, searchable: true, searchPlaceholder: "Search products", placeholder: "All products" }} value={selectedProductIds} onChange={setSelectedProductIds} />
             {selectedProductIds.length ? <View style={styles.actionRow}><Action label="Clear product filter" quiet onPress={() => setSelectedProductIds([])} /></View> : null}
-            <Text style={styles.fieldHint}>Showing {visibleDrafts.length} of {drafts.length} listings. Choose one or more products to narrow the list.</Text>
-          </> : null}
+            <Text style={styles.fieldHint}>Showing {visibleDrafts.length} of {drafts.length} {label}s. Choose one or more products to narrow the list.</Text>
+          </>
           {visibleDrafts.length ? visibleDrafts.map((row) => <Card key={row.id} style={styles.historyCard}>
             <View style={styles.cardTop}><View style={styles.flex}><Text style={styles.fieldLabel}>{row.sku || (type === "listing" ? "Listing" : "Product")}{row.status ? " · " + row.status : ""}</Text></View></View>
             <Text style={styles.fieldLabel}>{type === "listing" ? "Listing name" : "Product name"}</Text>
             <TextInput value={row.name} onChangeText={(value) => updateDraft(row.id, "name", value)} placeholder={type === "listing" ? "Listing name" : "Product name"} placeholderTextColor={COLORS.placeholder} style={styles.input} returnKeyType="next" />
             <Text style={[styles.fieldLabel, { marginTop: 10 }]}>{type === "listing" ? "Listing description" : "Product description"}</Text>
             <TextInput value={row.description} onChangeText={(value) => updateDraft(row.id, "description", value)} placeholder="Description (optional)" placeholderTextColor={COLORS.placeholder} style={[styles.input, styles.multilineInput]} multiline textAlignVertical="top" />
-          </Card>) : drafts.length ? <EmptyState title="No listings match these filters" body="Choose another status or clear the product filter to see more listings." /> : <EmptyState title={"No saved " + label + "s"} body={"Create a " + label + " first. This tool only edits existing records."} />}
+          </Card>) : drafts.length ? <EmptyState title={"No " + label + "s match these filters"} body="Choose another status or clear the product filter to see more saved records." /> : <EmptyState title={"No saved " + label + "s"} body={"Create a " + label + " first. This tool only edits existing records."} />}
           {error ? <Text style={styles.errorText}>{error}</Text> : null}
           {drafts.length ? <Action label="Save all changes" onPress={submit} /> : null}
         </ScrollView>
@@ -6644,4 +6645,3 @@ function makeStyles() { return StyleSheet.create({
 }); }
 /* eslint-enable react-native/no-unused-styles */
 let styles = makeStyles();
-
