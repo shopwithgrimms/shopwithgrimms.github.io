@@ -2140,6 +2140,50 @@ function HelpModal({ visible, screen, onClose }) {
   </Modal>;
 }
 
+function BulkEditModal({ visible, type, records = [], onClose, onSave }) {
+  const [drafts, setDrafts] = useState([]);
+  const [error, setError] = useState("");
+  useEffect(() => {
+    setDrafts((records || []).map((record) => ({
+      id: record.id,
+      name: String(type === "listing" ? record.productName || record.name || "" : record.name || ""),
+      description: String(record.description || ""),
+      sku: record.sku || record.listingSku || "",
+      status: record.archived ? "Archived" : "",
+    })));
+    setError("");
+  }, [visible, type, records]);
+  const updateDraft = (id, key, value) => setDrafts((old) => old.map((row) => row.id === id ? { ...row, [key]: value } : row));
+  const submit = () => {
+    const missingName = drafts.find((row) => !String(row.name || "").trim());
+    if (missingName) {
+      setError("Every saved item needs a name. Add a name or leave that row unchanged before saving.");
+      return;
+    }
+    onSave(type, drafts);
+  };
+  const label = type === "listing" ? "listing" : "product";
+  return <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
+    <SafeAreaView style={styles.modalSafe}>
+      <View style={styles.modalHeader}><Pressable onPress={onClose}><Text style={styles.modalCancel}>Cancel</Text></Pressable><Text style={styles.modalTitle}>Bulk edit {label}s</Text><Pressable onPress={submit}><Text style={styles.modalSave}>Save all</Text></Pressable></View>
+      <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === "ios" ? "padding" : "height"}>
+        <ScrollView contentContainerStyle={styles.formContent} keyboardShouldPersistTaps="handled">
+          <View style={styles.infoBanner}><Text style={styles.infoBannerTitle}>Edit saved {label}s</Text><Text style={styles.infoBannerText}>Change names and descriptions here. Other product, listing, inventory, and sales details stay as they are.</Text></View>
+          {drafts.length ? drafts.map((row) => <Card key={row.id} style={styles.historyCard}>
+            <View style={styles.cardTop}><View style={styles.flex}><Text style={styles.fieldLabel}>{row.sku || (type === "listing" ? "Listing" : "Product")}{row.status ? " · " + row.status : ""}</Text></View></View>
+            <Text style={styles.fieldLabel}>{type === "listing" ? "Listing name" : "Product name"}</Text>
+            <TextInput value={row.name} onChangeText={(value) => updateDraft(row.id, "name", value)} placeholder={type === "listing" ? "Listing name" : "Product name"} placeholderTextColor={COLORS.placeholder} style={styles.input} returnKeyType="next" />
+            <Text style={[styles.fieldLabel, { marginTop: 10 }]}>{type === "listing" ? "Listing description" : "Product description"}</Text>
+            <TextInput value={row.description} onChangeText={(value) => updateDraft(row.id, "description", value)} placeholder="Description (optional)" placeholderTextColor={COLORS.placeholder} style={[styles.input, styles.multilineInput]} multiline textAlignVertical="top" />
+          </Card>) : <EmptyState title={"No saved " + label + "s"} body={"Create a " + label + " first. This tool only edits existing records."} />}
+          {error ? <Text style={styles.errorText}>{error}</Text> : null}
+          {drafts.length ? <Action label="Save all changes" onPress={submit} /> : null}
+        </ScrollView>
+      </KeyboardAvoidingView>
+    </SafeAreaView>
+  </Modal>;
+}
+
 const TUTORIAL_STEPS = [
   ["GRIMMS Business Tracker", "A practical workspace for handmade and small businesses. Keep materials, products, listings, sales, schedules, suppliers, and business finances organized in one place.", "Your saved records stay in this browser on this device. The guided tour and profile setup do not erase them. If you moved to a new phone or browser, choose Restore saved data and paste the backup text you kept."],
   ["Set up your shop profile", "Your business name, display currency, sales channels, and supplier names make the tracker match the way you work. You can change these later in Settings. The currency setting changes display only; it never converts saved amounts.", "Example: enter ‘Northside Studio,’ choose USD, add Etsy and In-person as channels, then add ‘Northside Bead Co.’ as a supplier. Keep each name consistent when recording listings and purchases."],
@@ -2398,6 +2442,7 @@ export default function App() {
   const [screen, setScreen] = useState("Dashboard");
   const [navigationStack, setNavigationStack] = useState(["Dashboard"]);
   const [modalType, setModalType] = useState("");
+  const [bulkEditType, setBulkEditType] = useState("");
   const [editingRecord, setEditingRecord] = useState(null);
   const [formPrefill, setFormPrefill] = useState(null);
   const [detailSelection, setDetailSelection] = useState(null);
@@ -2779,6 +2824,53 @@ export default function App() {
     const updated = recipe(old);
     return updated && updated !== old ? updated : updated || old;
   });
+  const saveBulkEdits = (type, drafts) => {
+    const draftById = new Map((drafts || []).map((row) => [row.id, row]));
+    setData((old) => {
+      const now = new Date().toISOString();
+      const withAudit = (record, changes, action) => {
+        const changed = Object.keys(changes).filter((key) => JSON.stringify(record[key] == null ? null : record[key]) !== JSON.stringify(changes[key] == null ? null : changes[key]));
+        if (!changed.length) return record;
+        return {
+          ...record,
+          ...changes,
+          updatedAt: now,
+          auditLog: (record.auditLog || []).concat([{ id: uid("audit"), action, date: now, changes: changed.map((field) => ({ field, from: record[field] == null ? null : record[field], to: changes[field] == null ? null : changes[field] })) }]),
+        };
+      };
+      if (type === "product") {
+        const renamedProducts = new Map();
+        const products = old.products.map((product) => {
+          const draft = draftById.get(product.id);
+          if (!draft) return product;
+          const name = String(draft.name || "").trim();
+          if (name !== product.name) renamedProducts.set(product.id, { from: product.name, to: name });
+          return withAudit(product, { name, description: String(draft.description || ""), notes: String(draft.description || "") }, "Bulk edit name and description");
+        });
+        const listings = old.listings.map((listing) => {
+          const rename = renamedProducts.get(listing.productId);
+          // A listing title that still matches the old product name follows the rename.
+          // A title already customized on the listing stays independent.
+          return rename && String(listing.productName || "") === String(rename.from || "")
+            ? withAudit(listing, { productName: rename.to }, "Linked product name updated")
+            : listing;
+        });
+        return withCurrentSkuCounters({ ...old, products, listings });
+      }
+      if (type === "listing") {
+        const listings = old.listings.map((listing) => {
+          const draft = draftById.get(listing.id);
+          if (!draft) return listing;
+          return withAudit(listing, { productName: String(draft.name || "").trim(), description: String(draft.description || "") }, "Bulk edit name and description");
+        });
+        return withCurrentSkuCounters({ ...old, listings });
+      }
+      return old;
+    });
+    setBulkEditType("");
+    const label = type === "listing" ? "listing" : "product";
+    setRecordActionNotice(`Saved name and description changes for ${(drafts || []).length} ${label}${(drafts || []).length === 1 ? "" : "s"}.`);
+  };
   const requestRecordConfirmation = (confirmation) => setPendingRecordConfirmation(confirmation);
   const finishRecordConfirmation = () => {
     const confirmation = pendingRecordConfirmation;
@@ -3023,13 +3115,18 @@ export default function App() {
         }
       } else if (type === "listing") {
         const product = old.products.find((x) => x.id === values.productId);
+        const existingListing = record ? old.listings.find((item) => item.id === record.id) : null;
+        const existingListingProduct = existingListing && old.products.find((item) => item.id === existingListing.productId);
+        const listingName = existingListing && existingListing.productId === product.id && existingListing.productName && existingListingProduct && existingListing.productName !== existingListingProduct.name
+          ? existingListing.productName
+          : product.name;
         const marketplaces = Array.isArray(values.marketplaces) ? values.marketplaces : (values.marketplace ? [values.marketplace] : []);
         const listingSku = String(values.listingSku || (record && record.listingSku) || ("LIST-" + String(firstAvailableSkuNumber(old.listings, "listingSku", "LIST-")).padStart(3, "0"))).trim();
         const requestedStatus = values.status || "Draft";
         const startDate = values.startDate || "";
         const listingStatus = requestedStatus === "Paused" ? "Paused" : startDate ? (startDate > today ? "Scheduled" : "Active") : requestedStatus;
         update("listings", {
-          productId: product.id, productName: product.name, productSku: product.sku, listingSku,
+          productId: product.id, productName: listingName, productSku: product.sku, listingSku,
           marketplaces, marketplace: marketplaces.join(", "), status: listingStatus, startDate,
           price: Math.max(0, asNumber(values.price, product.price)),
           description: String(values.description || "").trim(),
@@ -4480,7 +4577,7 @@ export default function App() {
     const inventoryValue = activeProducts.reduce((sum, item) => sum + (Number(item.inventory) || 0) * (Number(item.price) || 0), 0);
     return (
       <>
-        <View style={styles.infoBanner}><Text style={styles.infoBannerTitle}>Your product catalog</Text><Text style={styles.infoBannerText}>Products share finished stock with orders and listing availability. Production checks each saved recipe against component stock.</Text><View style={styles.actionRow}><Action label="＋ Add product" onPress={() => beginAdd("product")} /><Action label="＋ Make products" quiet onPress={() => navigateToScreen("Production")} /></View></View>
+        <View style={styles.infoBanner}><Text style={styles.infoBannerTitle}>Your product catalog</Text><Text style={styles.infoBannerText}>Products share finished stock with orders and listing availability. Production checks each saved recipe against component stock.</Text><View style={styles.actionRow}><Action label="＋ Add product" onPress={() => beginAdd("product")} /><Action label="Bulk edit names & descriptions" quiet onPress={() => setBulkEditType("product")} /><Action label="＋ Make products" quiet onPress={() => navigateToScreen("Production")} /></View></View>
         <View style={styles.metricGrid}><Metric label="Active products" value={String(activeProducts.length)} /><Metric label="Finished units" value={String(activeProducts.reduce((sum, item) => sum + (Number(item.inventory) || 0), 0))} /><Metric label="Out of stock" value={String(activeProducts.filter((item) => Number(item.inventory) <= 0).length)} /><Metric label="Retail value on hand" value={money(inventoryValue, db.currency)} /></View>
         <ChoiceChips label="Filter products" options={["All", ...categories]} value={productCategoryFilter} onChange={setProductCategoryFilter} />
         <View style={styles.actionRow}><Action label={expandedAttributeFilters.products ? "Hide attribute filters" : "Filter by color, material, size, or audience" + (attributeFilterCount("products") ? " · " + attributeFilterCount("products") + " active" : "")} quiet onPress={() => toggleAttributeFilters("products")} />{attributeFilterCount("products") ? <Action label="Clear filters" quiet onPress={() => clearAttributeFilters("products")} /> : null}</View>
@@ -4605,7 +4702,7 @@ export default function App() {
     const editListing = (item) => beginEdit("listing", { ...item, price: String(item.price), marketplaces: item.marketplaces || (item.marketplace ? [item.marketplace] : []) });
     return (
       <>
-        <View style={styles.infoBanner}><Text style={styles.infoBannerTitle}>Listings, promotion plans, and relists</Text><Text style={styles.infoBannerText}>Search and filter your marketplace listings. Sold-out products are flagged here so you can archive a listing or relist it after making more stock. Archiving a listing hides only that marketplace offer and never returns materials. Sold units stay consumed; archiving a product returns materials only for finished units still in stock.</Text><View style={styles.actionRow}><Action label="＋ Add listing" onPress={() => beginAdd("listing")} /><Action label="Listing analytics" quiet onPress={() => navigateToScreen("Listing Analytics")} /></View></View>
+        <View style={styles.infoBanner}><Text style={styles.infoBannerTitle}>Listings, promotion plans, and relists</Text><Text style={styles.infoBannerText}>Search and filter your marketplace listings. Sold-out products are flagged here so you can archive a listing or relist it after making more stock. Archiving a listing hides only that marketplace offer and never returns materials. Sold units stay consumed; archiving a product returns materials only for finished units still in stock.</Text><View style={styles.actionRow}><Action label="＋ Add listing" onPress={() => beginAdd("listing")} /><Action label="Bulk edit names & descriptions" quiet onPress={() => setBulkEditType("listing")} /><Action label="Listing analytics" quiet onPress={() => navigateToScreen("Listing Analytics")} /></View></View>
         <View style={styles.metricGrid}><Metric label="Live now" value={String(actualListings)} /><Metric label="Need archiving" value={String(needsArchive)} /><Metric label="Discounts planned" value={String(scheduledDiscounts)} /><Metric label="Relists coming up" value={String(relistsDue)} /></View>
         <View style={styles.metricGrid}><Metric label="Sales channels" value={String(listingChannels.size)} /><Metric label="Products represented" value={String(representedProducts.size)} /><Metric label="Combined asking prices" value={money(combinedAskingPrices, db.currency)} /></View>
          {needsArchive ? <Card><Text style={styles.cardTitle}>Sold-out listings need attention</Text>{activeListings.filter((item) => item.needsArchive).map((item) => {
@@ -5913,6 +6010,7 @@ export default function App() {
         </View>
       </Modal>
       <RecordModal visible={!!modalType} type={modalType} record={editingRecord} db={db} prefill={formPrefill} onClose={closeForm} onSave={saveRecord} onManageOptions={manageDropdownFromField} />
+      <BulkEditModal visible={!!bulkEditType} type={bulkEditType} records={bulkEditType === "listing" ? db.listings : db.products} onClose={() => setBulkEditType("")} onSave={saveBulkEdits} />
       <ThemeChooserModal visible={themePickerOpen} currentName={db.themeName} customTheme={db.customTheme} onClose={() => setThemePickerOpen(false)} onSelect={(name) => { chooseTheme(name); setThemePickerOpen(false); }} />
       <HelpModal visible={helpOpen} screen={isFulfillmentPage ? "Orders" : screen} onClose={() => setHelpOpen(false)} />
       <TutorialModal visible={tutorialOpen} onClose={() => finishTutorial(false)} onOpenSettings={() => finishTutorial(true)} onRestoreBackup={openSavedBackupRestore} />
