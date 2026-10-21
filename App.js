@@ -6644,3 +6644,4 @@ function makeStyles() { return StyleSheet.create({
 }); }
 /* eslint-enable react-native/no-unused-styles */
 let styles = makeStyles();
+
