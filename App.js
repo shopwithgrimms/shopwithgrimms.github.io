@@ -2140,9 +2140,11 @@ function HelpModal({ visible, screen, onClose }) {
   </Modal>;
 }
 
-function BulkEditModal({ visible, type, records = [], onClose, onSave }) {
+function BulkEditModal({ visible, type, records = [], products = [], onClose, onSave }) {
   const [drafts, setDrafts] = useState([]);
   const [error, setError] = useState("");
+  const [listingStatusFilter, setListingStatusFilter] = useState("All");
+  const [selectedProductIds, setSelectedProductIds] = useState([]);
   useEffect(() => {
     setDrafts((records || []).map((record) => ({
       id: record.id,
@@ -2152,8 +2154,22 @@ function BulkEditModal({ visible, type, records = [], onClose, onSave }) {
       status: record.archived ? "Archived" : "",
     })));
     setError("");
+    setListingStatusFilter("All");
+    setSelectedProductIds([]);
   }, [visible, type, records]);
   const updateDraft = (id, key, value) => setDrafts((old) => old.map((row) => row.id === id ? { ...row, [key]: value } : row));
+  const sourceById = new Map((records || []).map((record) => [record.id, record]));
+  const visibleDrafts = type === "listing" ? drafts.filter((draft) => {
+    const listing = sourceById.get(draft.id);
+    if (!listing) return false;
+    if (listingStatusFilter === "Active" && listing.archived) return false;
+    if (listingStatusFilter === "Archived" && !listing.archived) return false;
+    return !selectedProductIds.length || selectedProductIds.includes(listing.productId);
+  }) : drafts;
+  const productOptions = (products || []).map((product) => ({
+    label: [product.name, product.sku, product.archived ? "Archived" : ""].filter(Boolean).join(" · "),
+    value: product.id,
+  }));
   const submit = () => {
     const missingName = drafts.find((row) => !String(row.name || "").trim());
     if (missingName) {
@@ -2169,13 +2185,23 @@ function BulkEditModal({ visible, type, records = [], onClose, onSave }) {
       <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === "ios" ? "padding" : "height"}>
         <ScrollView contentContainerStyle={styles.formContent} keyboardShouldPersistTaps="handled">
           <View style={styles.infoBanner}><Text style={styles.infoBannerTitle}>Edit saved {label}s</Text><Text style={styles.infoBannerText}>Change names and descriptions here. Other product, listing, inventory, and sales details stay as they are.</Text></View>
-          {drafts.length ? drafts.map((row) => <Card key={row.id} style={styles.historyCard}>
+          {type === "listing" ? <>
+            <ChoiceChips label="Show listings" options={[
+              { label: "All · " + (records || []).length, value: "All" },
+              { label: "Active · " + (records || []).filter((record) => !record.archived).length, value: "Active" },
+              { label: "Archived · " + (records || []).filter((record) => !!record.archived).length, value: "Archived" },
+            ]} value={listingStatusFilter} onChange={setListingStatusFilter} />
+            <Field field={{ label: "Filter by product", options: productOptions, multiple: true, searchable: true, searchPlaceholder: "Search products", placeholder: "All products" }} value={selectedProductIds} onChange={setSelectedProductIds} />
+            {selectedProductIds.length ? <View style={styles.actionRow}><Action label="Clear product filter" quiet onPress={() => setSelectedProductIds([])} /></View> : null}
+            <Text style={styles.fieldHint}>Showing {visibleDrafts.length} of {drafts.length} listings. Choose one or more products to narrow the list.</Text>
+          </> : null}
+          {visibleDrafts.length ? visibleDrafts.map((row) => <Card key={row.id} style={styles.historyCard}>
             <View style={styles.cardTop}><View style={styles.flex}><Text style={styles.fieldLabel}>{row.sku || (type === "listing" ? "Listing" : "Product")}{row.status ? " · " + row.status : ""}</Text></View></View>
             <Text style={styles.fieldLabel}>{type === "listing" ? "Listing name" : "Product name"}</Text>
             <TextInput value={row.name} onChangeText={(value) => updateDraft(row.id, "name", value)} placeholder={type === "listing" ? "Listing name" : "Product name"} placeholderTextColor={COLORS.placeholder} style={styles.input} returnKeyType="next" />
             <Text style={[styles.fieldLabel, { marginTop: 10 }]}>{type === "listing" ? "Listing description" : "Product description"}</Text>
             <TextInput value={row.description} onChangeText={(value) => updateDraft(row.id, "description", value)} placeholder="Description (optional)" placeholderTextColor={COLORS.placeholder} style={[styles.input, styles.multilineInput]} multiline textAlignVertical="top" />
-          </Card>) : <EmptyState title={"No saved " + label + "s"} body={"Create a " + label + " first. This tool only edits existing records."} />}
+          </Card>) : drafts.length ? <EmptyState title="No listings match these filters" body="Choose another status or clear the product filter to see more listings." /> : <EmptyState title={"No saved " + label + "s"} body={"Create a " + label + " first. This tool only edits existing records."} />}
           {error ? <Text style={styles.errorText}>{error}</Text> : null}
           {drafts.length ? <Action label="Save all changes" onPress={submit} /> : null}
         </ScrollView>
@@ -2868,8 +2894,7 @@ export default function App() {
       return old;
     });
     setBulkEditType("");
-    const label = type === "listing" ? "listing" : "product";
-    setRecordActionNotice(`Saved name and description changes for ${(drafts || []).length} ${label}${(drafts || []).length === 1 ? "" : "s"}.`);
+    setRecordActionNotice("Bulk name and description changes saved. Check the save status in the top bar.");
   };
   const requestRecordConfirmation = (confirmation) => setPendingRecordConfirmation(confirmation);
   const finishRecordConfirmation = () => {
@@ -6010,7 +6035,7 @@ export default function App() {
         </View>
       </Modal>
       <RecordModal visible={!!modalType} type={modalType} record={editingRecord} db={db} prefill={formPrefill} onClose={closeForm} onSave={saveRecord} onManageOptions={manageDropdownFromField} />
-      <BulkEditModal visible={!!bulkEditType} type={bulkEditType} records={bulkEditType === "listing" ? db.listings : db.products} onClose={() => setBulkEditType("")} onSave={saveBulkEdits} />
+      <BulkEditModal visible={!!bulkEditType} type={bulkEditType} records={bulkEditType === "listing" ? db.listings : db.products} products={db.products} onClose={() => setBulkEditType("")} onSave={saveBulkEdits} />
       <ThemeChooserModal visible={themePickerOpen} currentName={db.themeName} customTheme={db.customTheme} onClose={() => setThemePickerOpen(false)} onSelect={(name) => { chooseTheme(name); setThemePickerOpen(false); }} />
       <HelpModal visible={helpOpen} screen={isFulfillmentPage ? "Orders" : screen} onClose={() => setHelpOpen(false)} />
       <TutorialModal visible={tutorialOpen} onClose={() => finishTutorial(false)} onOpenSettings={() => finishTutorial(true)} onRestoreBackup={openSavedBackupRestore} />
