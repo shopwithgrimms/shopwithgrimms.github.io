@@ -525,14 +525,6 @@ const formatDateInput = (value) => {
   const timestamp = new Date(text);
   return /^\d{4}-\d{2}-\d{2}T/.test(text) && !Number.isNaN(timestamp.getTime()) ? formatDateInput(localDateKey(timestamp)) : text;
 };
-const nextSkuNumber = (rows, key, prefix) => {
-  const pattern = new RegExp("^" + prefix + "([0-9]+)$", "i");
-  const maximum = (rows || []).reduce((current, row) => {
-    const match = String(row && row[key] || "").trim().match(pattern);
-    return match ? Math.max(current, Number(match[1]) || 0) : current;
-  }, 0);
-  return maximum + 1;
-};
 const firstAvailableSkuNumber = (rows, key, prefix) => {
   const pattern = new RegExp("^" + prefix + "([0-9]+)$", "i");
   const used = new Set((rows || []).map((row) => {
@@ -543,16 +535,9 @@ const firstAvailableSkuNumber = (rows, key, prefix) => {
   while (used.has(number)) number += 1;
   return number;
 };
-const productSkuReferences = (data) => [
-  ...(data.listings || []).map((item) => ({ sku: item.productSku, productId: item.productId })),
-  ...(data.orders || []).flatMap((order) => (order.items || []).map((item) => ({ sku: item.productSku, productId: item.productId }))),
-  ...(data.deletedOrders || []).flatMap((order) => (order.items || []).map((item) => ({ sku: item.productSku, productId: item.productId }))),
-  ...(data.reviews || []).map((item) => ({ sku: item.productSku || item.sku, productId: item.productId })),
-  ...(data.productions || []).map((item) => ({ sku: item.productSku, productId: item.productId })),
-].filter((item) => String(item.sku || "").trim());
-const firstAvailableProductSkuNumber = (data) => firstAvailableSkuNumber([
-  ...(data.products || []), ...productSkuReferences(data),
-], "sku", "PROD-");
+// A SKU is occupied by a live record, including archived records. Historical
+// snapshots and deleted records keep their saved code but do not reserve it.
+const firstAvailableProductSkuNumber = (data) => firstAvailableSkuNumber(data.products || [], "sku", "PROD-");
 const normalizeProductSku = (value) => {
   const sku = String(value || "").trim();
   const match = sku.match(/^PROD-([0-9]+)$/i);
@@ -567,17 +552,13 @@ const attributeFilterOptions = (rows, optionKey, fieldKey) => Array.from(new Set
   ...(rows || []).flatMap((record) => attributeValues(record && record[fieldKey])),
 ])).sort((left, right) => left.localeCompare(right));
 const withCurrentSkuCounters = (data) => {
-  const preservedCounter = (value, rows, key, prefix) => Math.max(
-    Number.isFinite(Number(value)) ? Math.max(1, Math.floor(Number(value))) : 1,
-    nextSkuNumber(rows, key, prefix),
-  );
   return {
     ...data,
-    nextComponentSku: preservedCounter(data.nextComponentSku, data.components, "sku", "COMP-"),
-    // Product numbers are reusable only when no product record (including archived ones) owns them.
+    // Counters are suggestions, so always point to the lowest free number.
+    nextComponentSku: firstAvailableSkuNumber(data.components, "sku", "COMP-"),
     nextProductSku: firstAvailableProductSkuNumber(data),
-    nextListingSku: preservedCounter(data.nextListingSku, data.listings, "listingSku", "LIST-"),
-    nextOrderSku: preservedCounter(data.nextOrderSku, data.orders, "orderSku", "ORDER-"),
+    nextListingSku: firstAvailableSkuNumber(data.listings, "listingSku", "LIST-"),
+    nextOrderSku: firstAvailableSkuNumber(data.orders, "orderSku", "ORDER-"),
   };
 };
 const normalizeDatabase = (saved) => {
@@ -971,10 +952,7 @@ function createFormDefaults(type, record, defaultLowStock, defaults) {
   }
   if (type === "restock") { base.quantity = "1"; base.purchaseCost = ""; base.shippingCost = ""; base.date = TODAY; }
   if (type === "product") {
-    const skuRows = [
-      ...((defaults && defaults.products) || []),
-      ...((defaults && defaults.productSkuReferences) || []),
-    ];
+    const skuRows = (defaults && defaults.products) || [];
     base.sku = "PROD-" + String(firstAvailableSkuNumber(skuRows, "sku", "PROD-")).padStart(3, "0");
     base.price = ""; base.inventory = "0"; base.recipe = []; base.condition = "Handmade"; base.packageWeight = ""; base.packageWeightUnit = "oz";
   }
@@ -988,8 +966,8 @@ function createFormDefaults(type, record, defaultLowStock, defaults) {
     base.unitPrice = line ? String(line.unitPrice) : "";
     base.actualFees = record && record.feeSource === "actual" ? String(record.fees || 0) : "";
   }
-  if (type === "listing") base.listingSku = (record && (record.listingSku || record.productSku)) || "LIST-" + String((defaults && defaults.nextListingSku) || 1).padStart(3, "0");
-  if (type === "order") base.orderSku = (record && record.orderSku) || "ORDER-" + String((defaults && defaults.nextOrderSku) || 1).padStart(3, "0");
+  if (type === "listing") base.listingSku = (record && (record.listingSku || record.productSku)) || "LIST-" + String(firstAvailableSkuNumber((defaults && defaults.listings) || [], "listingSku", "LIST-")).padStart(3, "0");
+  if (type === "order") base.orderSku = (record && record.orderSku) || "ORDER-" + String(firstAvailableSkuNumber((defaults && defaults.orders) || [], "orderSku", "ORDER-")).padStart(3, "0");
   if (type === "review") { base.stars = "5"; base.date = TODAY; }
   if (type === "expense") { base.amount = ""; base.date = TODAY; }
   if (type === "income") { base.amount = ""; base.date = TODAY; }
@@ -1980,7 +1958,7 @@ function RecordModal({ visible, type, record, db, prefill, onClose, onSave, onMa
   };
   const fields = (fieldsByType[type] || []).filter((field) => !(type === "product" && record && record.archived && field.key === "inventory"));
   const formSections = groupFields(fields);
-  const initialValuesJson = JSON.stringify({ type, record: record || null, defaultLowStock: db.defaultLowStock, defaultTaskPriority: db.defaultTaskPriority, defaultEventType: db.defaultEventType, noteCategories: db.dropdownOptions && db.dropdownOptions.noteCategories, nextProductSku: db.nextProductSku, products: db.products, productSkuReferences: productSkuReferences(db), nextListingSku: db.nextListingSku, nextOrderSku: db.nextOrderSku, prefill: prefill || null });
+  const initialValuesJson = JSON.stringify({ type, record: record || null, defaultLowStock: db.defaultLowStock, defaultTaskPriority: db.defaultTaskPriority, defaultEventType: db.defaultEventType, noteCategories: db.dropdownOptions && db.dropdownOptions.noteCategories, products: db.products, listings: db.listings, orders: db.orders, prefill: prefill || null });
   const [values, setValues] = useState(() => {
     const initial = JSON.parse(initialValuesJson);
     return { ...createFormDefaults(initial.type, initial.record, initial.defaultLowStock, initial), ...(initial.prefill || {}) };
@@ -2778,7 +2756,7 @@ export default function App() {
       prefill.lowStock = String(record.lowStock == null ? db.defaultLowStock : record.lowStock);
       prefill.cost = String(record.cost == null ? 0 : record.cost);
     } else if (type === "listing") {
-      prefill.listingSku = "LIST-" + String(db.nextListingSku || 1).padStart(3, "0");
+      prefill.listingSku = "LIST-" + String(firstAvailableSkuNumber(db.listings, "listingSku", "LIST-")).padStart(3, "0");
       prefill.status = "Draft";
       prefill.startDate = "";
       prefill.relistDate = "";
@@ -2863,12 +2841,6 @@ export default function App() {
       const skuKey = productSku.toLowerCase();
       if (db.products.some((item) => item.id !== (record && record.id) && String(item.sku || "").trim().toLowerCase() === skuKey)) {
         Alert.alert("Product SKU already in use", "Each product needs a unique SKU. Choose a different code and save again.");
-        return false;
-      }
-      const currentProduct = record && db.products.find((item) => item.id === record.id);
-      const keepingCurrentSku = currentProduct && String(currentProduct.sku || "").trim().toLowerCase() === skuKey;
-      if (!keepingCurrentSku && productSkuReferences(db).some((item) => String(item.sku || "").trim().toLowerCase() === skuKey && (!record || item.productId !== record.id))) {
-        Alert.alert("Product SKU is reserved", "That SKU is still saved in a listing, sale, review, or production history. Use another code so those records stay connected.");
         return false;
       }
       parsedRecipe = (values.recipe || []).map((part) => {
@@ -2964,9 +2936,8 @@ export default function App() {
         const name = String(values.name || "").trim();
         const quantity = asNumber(values.quantity, 0);
         const cost = asNumber(values.cost, 0);
-        const sku = record ? record.sku : "COMP-" + String(old.nextComponentSku || 1).padStart(3, "0");
+        const sku = record ? record.sku : "COMP-" + String(firstAvailableSkuNumber(old.components, "sku", "COMP-")).padStart(3, "0");
         const componentId = record ? record.id : uid("component");
-        if (isNew) next.nextComponentSku = (old.nextComponentSku || 1) + 1;
         const item = {
           id: componentId,
           name, sku, category: values.category || "Other", quantity: Math.max(0, quantity),
@@ -3053,9 +3024,7 @@ export default function App() {
       } else if (type === "listing") {
         const product = old.products.find((x) => x.id === values.productId);
         const marketplaces = Array.isArray(values.marketplaces) ? values.marketplaces : (values.marketplace ? [values.marketplace] : []);
-        const listingSku = String(values.listingSku || (record && record.listingSku) || ("LIST-" + String(old.nextListingSku || 1).padStart(3, "0"))).trim();
-        const listingSkuMatch = listingSku.match(/^LIST-(\d+)$/i);
-        next.nextListingSku = Math.max((old.nextListingSku || 1) + (record ? 0 : 1), listingSkuMatch ? Number(listingSkuMatch[1]) + 1 : 1);
+        const listingSku = String(values.listingSku || (record && record.listingSku) || ("LIST-" + String(firstAvailableSkuNumber(old.listings, "listingSku", "LIST-")).padStart(3, "0"))).trim();
         const requestedStatus = values.status || "Draft";
         const startDate = values.startDate || "";
         const listingStatus = requestedStatus === "Paused" ? "Paused" : startDate ? (startDate > today ? "Scheduled" : "Active") : requestedStatus;
@@ -3100,9 +3069,7 @@ export default function App() {
         const previousQuantities = {};
         (record && record.items || []).forEach((item) => { previousQuantities[item.productId] = (previousQuantities[item.productId] || 0) + (Number(item.quantity) || 0); });
         const inventoryChanges = { ...previousQuantities, [product.id]: (previousQuantities[product.id] || 0) - quantity };
-        const enteredOrderSku = String(values.orderSku || (record && record.orderSku) || ("ORDER-" + String(old.nextOrderSku || 1).padStart(3, "0"))).trim();
-        const orderSkuMatch = enteredOrderSku.match(/^ORDER-(\d+)$/i);
-        next.nextOrderSku = Math.max((old.nextOrderSku || 1) + (record ? 0 : 1), orderSkuMatch ? Number(orderSkuMatch[1]) + 1 : 1);
+        const enteredOrderSku = String(values.orderSku || (record && record.orderSku) || ("ORDER-" + String(firstAvailableSkuNumber(old.orders, "orderSku", "ORDER-")).padStart(3, "0"))).trim();
         const enteredAt = new Date().toISOString();
         const order = {
           ...(record || {}), id: orderId, orderSku: enteredOrderSku, createdAt: record ? record.createdAt : enteredAt, updatedAt: record ? enteredAt : null, date: values.date || today,
@@ -3294,14 +3261,14 @@ export default function App() {
           const productIds = Object.keys(soldByProduct);
           if (productIds.length === 1) soldByProduct[productIds[0]] = Math.max(0, soldByProduct[productIds[0]] - alreadyRestocked);
           const now = new Date().toISOString();
-          return {
+          return withCurrentSkuCounters({
             ...old,
             orders: old.orders.filter((item) => item.id !== order.id),
             deletedOrders: (old.deletedOrders || []).concat([{ ...order, deletedAt: now, deletionReason: "Deleted from Orders" }]),
             products: old.products.map((product) => soldByProduct[product.id] ? { ...product, inventory: (Number(product.inventory) || 0) + soldByProduct[product.id] } : product),
             listings: old.listings.map((listing) => listing.soldOutOrderId === order.id ? { ...listing, status: listing.soldOutPreviousStatus || "Active", needsArchive: false, soldOutAt: null, soldOutOrderId: null, soldOutPreviousStatus: null, auditLog: (listing.auditLog || []).concat([{ id: uid("audit"), action: "Sold-out status cleared after sale deletion", date: now, changes: [{ field: "status", from: "Sold", to: listing.soldOutPreviousStatus || "Active" }, { field: "needsArchive", from: true, to: false }] }]) } : listing),
             productTransactions: (old.productTransactions || []).concat(Object.entries(soldByProduct).filter(([, quantity]) => quantity > 0).map(([productId, quantity]) => ({ id: uid("sale-delete"), productId, quantity, kind: "Sale deleted · inventory returned", orderId: order.id, date: now, note: order.orderSku || order.marketplace || "" }))),
-          };
+          });
         }),
       });
       return;
@@ -3365,7 +3332,7 @@ export default function App() {
             }),
           } : {}),
         };
-        if (key !== "products") return next;
+        if (key !== "products") return withCurrentSkuCounters(next);
         const product = old.products.find((item) => item.id === record.id);
         if (!product || !active(product)) return withCurrentSkuCounters(next);
         const units = Math.max(0, Number(product.inventory) || 0);
