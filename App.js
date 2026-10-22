@@ -839,11 +839,35 @@ const periodDateRange = (period, value) => {
   return { start: selected, end: selected };
 };
 const active = (record) => !record.archived;
+const listingReservesProductStock = (listing, product) => !!listing && active(listing) && !listing.needsArchive && listing.status === "Active" && (!listing.startDate || listing.startDate <= TODAY) && (!product || active(product) && Math.max(0, Number(product.inventory) || 0) > 0);
+const productHasLiveListing = (product, listings, excludeListingId) => (listings || []).some((listing) => listing.id !== excludeListingId && listing.productId === product.id && listingReservesProductStock(listing, product));
+const productAvailableUnits = (product, listings, excludeListingId) => {
+  if (!product) return 0;
+  const onHand = Math.max(0, Number(product.inventory) || 0);
+  return productHasLiveListing(product, listings, excludeListingId) ? 0 : onHand;
+};
 const totalOrder = (order) => ((order && order.items) || []).reduce((sum, item) => sum + Math.max(0, Number(item.quantity) || 0) * Math.max(0, Number(item.unitPrice) || 0), 0);
 const orderRestockedQuantity = (order) => {
   if (order && order.restockedQuantity != null) return Math.max(0, Number(order.restockedQuantity) || 0);
   return ((order && order.refundHistory) || []).reduce((sum, entry) => sum + Math.max(0, Number(entry.restockQuantity) || 0), 0);
 };
+const soldQuantityForListing = (listing, orders) => (orders || []).reduce((sum, order) => {
+  const lines = (order.items || []).filter((line) => line.listingId === listing.id || line.listingSku && listing.listingSku && String(line.listingSku).trim().toLowerCase() === String(listing.listingSku).trim().toLowerCase());
+  if (lines.length) {
+    const gross = lines.reduce((lineSum, line) => lineSum + Math.max(0, Number(line.quantity) || 0), 0);
+    const returned = (order.items || []).length === 1 ? Math.min(gross, orderRestockedQuantity(order)) : 0;
+    return sum + Math.max(0, gross - returned);
+  }
+  const topLevelMatches = order.listingId === listing.id || order.listingSku && listing.listingSku && String(order.listingSku).trim().toLowerCase() === String(listing.listingSku).trim().toLowerCase();
+  if (topLevelMatches) return sum + Math.max(0, Number(order.quantity) || 0);
+  if (listing.status === "Sold" && listing.soldOutOrderId === order.id) {
+    const soldLines = (order.items || []).filter((line) => line.productId === listing.productId);
+    const gross = soldLines.reduce((lineSum, line) => lineSum + Math.max(0, Number(line.quantity) || 0), 0);
+    const returned = (order.items || []).length === 1 ? Math.min(gross, orderRestockedQuantity(order)) : 0;
+    return sum + Math.max(0, gross - returned);
+  }
+  return sum;
+}, 0);
 const orderMaterialCost = (order) => {
   const items = (order && order.items) || [];
   const restocked = items.length === 1 ? Math.min(Math.max(0, Number(items[0].quantity) || 0), orderRestockedQuantity(order)) : 0;
@@ -1001,7 +1025,7 @@ const FIELD_EXPLANATIONS = {
   supplier: "The seller or company you purchased this supply from. Use the same spelling as the Supplier directory so the records are easy to match. Example: ‘Northside Bead Co.’",
   price: "The amount a buyer pays for one finished item, before any order-level shipping or fees. Example: enter 28.00 if one necklace is listed for $28.",
   unitPrice: "The amount charged for one item in this sale. Quantity is multiplied by this amount to calculate the item subtotal. Example: 2 candles at $18 each gives a $36 subtotal. Leave blank to use the product’s saved price.",
-  inventory: "The number of completed units ready to sell now. This is finished stock, not the amount of raw materials. Example: enter 4 if four pairs are made and available.",
+  inventory: "Finished units physically on hand, including any units reserved by live listings. The Products page shows ready-to-sell stock separately after subtracting live listing reservations. Example: if you have 1 finished unit and it is listed, the product shows 0 ready to sell until that listing is paused or archived.",
   colors: "Choose one or more colors from your saved choices. Add, rename, or remove choices in Settings → Dropdown choices. Older saved color text stays visible when you edit a record.",
   materials: "Choose the materials used in or included with the item. Manage the choices in Settings → Dropdown choices. Product recipe quantities are tracked separately.",
   sizes: "Choose one or more sizes for this item. Add your own size labels in Settings → Dropdown choices.",
@@ -1814,8 +1838,13 @@ function RecordModal({ visible, type, record, db, prefill, onClose, onSave, onMa
   const optionsFor = (key) => (db.dropdownOptions && db.dropdownOptions[key] || DEFAULT_DROPDOWN_OPTIONS[key] || []).map((value) => ({ label: value, value }));
   const supplierOptions = (db.suppliers || []).filter(active).map((item) => ({ label: item.name, value: item.name }));
   const currentOrderProductId = type === "order" && record && record.items && record.items[0] ? record.items[0].productId : "";
-  const productOptions = (db.products || []).filter((p) => active(p) || p.id === currentOrderProductId).map((p) => ({ label: p.name + " (" + p.sku + ") · " + (Math.max(0, Number(p.inventory) || 0)) + " available" + (p.archived ? " · archived" : ""), value: p.id }));
-  const listingProductOptions = (db.products || []).filter(active).map((product) => ({ label: product.name + " (" + product.sku + ")", value: product.id }));
+  const currentListingProductId = type === "listing" && record ? record.productId : "";
+  const productOptions = (db.products || []).filter((product) => active(product) || product.id === currentOrderProductId).map((product) => {
+    const available = productAvailableUnits(product, db.listings);
+    const listed = Math.max(0, Number(product.inventory) || 0) > 0 && available === 0;
+    return { label: product.name + " (" + product.sku + ") · " + available + " ready to sell" + (listed ? " · listed" : "") + (product.archived ? " · archived" : ""), value: product.id };
+  });
+  const listingProductOptions = (db.products || []).filter((product) => active(product) && (productAvailableUnits(product, db.listings, record && record.id) > 0 || product.id === currentListingProductId && !!record)).map((product) => ({ label: product.name + " (" + product.sku + ")", value: product.id }));
   const orderOptions = (db.orders || []).map((order) => ({ label: [order.orderSku, (order.items || []).map((item) => [item.productName, item.productSku, item.listingName, item.listingSku].filter(Boolean).join(" ").trim()).join(", "), order.customer, dateLabel(order.date)].filter(Boolean).join(" · "), value: order.id }));
   const fieldsByType = {
     component: [
@@ -1853,12 +1882,12 @@ function RecordModal({ visible, type, record, db, prefill, onClose, onSave, onMa
       { key: "description", label: "Product description", multiline: true, placeholder: "Describe the finished item, materials, colors, and anything you want to remember" },
       { key: "condition", label: "Condition or item type", options: CONDITION_OPTIONS },
       { key: "price", label: "Selling price", number: true, required: true, placeholder: "0.00" },
-      { key: "inventory", label: record ? "Finished inventory on hand" : "Starting finished inventory", number: true, placeholder: "0" },
+      { key: "inventory", label: record ? "Finished inventory on hand" : "Starting finished inventory", number: true, placeholder: "0", hint: "This is finished stock you physically have, including units reserved by live marketplace listings. Active listings reduce the product’s ready-to-sell count to zero until the listing is paused, archived, or sold." },
       { key: "packageWeight", label: "Final packaged weight", number: true, placeholder: "Example: 4.5" },
       { key: "packageWeightUnit", label: "Package weight unit", options: WEIGHT_UNITS },
     ],
     listing: [
-      { key: "productId", label: "Product", options: listingProductOptions, searchable: true, searchPlaceholder: "Search active products by name or SKU", emptyMessage: "No active products found. Add or restore a product first.", required: true, placeholder: "Choose an active product", hint: "Only active products appear here. Creating, archiving, or deleting a listing does not change product or component inventory." },
+      { key: "productId", label: "Product", options: listingProductOptions, searchable: true, searchPlaceholder: "Search active products by name or SKU", emptyMessage: "No active products with finished stock available. Make or unlist stock first.", required: true, placeholder: "Choose an active product", hint: "Only active products with finished stock ready to list appear here. A live listing reserves that product’s finished stock; archiving or pausing an unsold listing releases it back to ready-to-sell stock. Component materials stay consumed because the finished product still exists." },
       { key: "listingNameOverride", label: "Listing name (optional override)", placeholder: "Leave blank to use the product name", hint: "A custom title here applies only to this marketplace listing. Leave it blank to follow future product name changes." },
       { key: "listingSku", label: "Listing SKU", required: true, placeholder: "Example: LIST-001" },
       { key: "marketplaces", label: "Sales channels (choose all that apply)", optionSet: "marketplaces", options: optionsFor("marketplaces"), multiple: true, required: true, placeholder: "Choose one or more channels" },
@@ -2069,7 +2098,7 @@ function RecordModal({ visible, type, record, db, prefill, onClose, onSave, onMa
                   }
                 }
                 if (type === "order") {
-                  const candidates = db.listings.filter((item) => active(item) && item.productId === value);
+                  const candidates = db.listings.filter((item) => item.productId === value && listingReservesProductStock(item, selected));
                   const selectedListing = candidates.find((item) => (item.marketplaces || (item.marketplace ? String(item.marketplace).split(",").map((channel) => channel.trim()) : [])).includes(next.marketplace)) || null;
                   next.listingId = selectedListing ? selectedListing.id : "";
                   if (selected) next.unitPrice = String(selectedListing && selectedListing.price != null ? selectedListing.price : selected.price || "");
@@ -2081,10 +2110,10 @@ function RecordModal({ visible, type, record, db, prefill, onClose, onSave, onMa
               }
               if (type === "listing" && field.key === "description") next.descriptionSource = "manual";
               if (type === "order" && field.key === "marketplace") {
-                const candidates = db.listings.filter((item) => active(item) && item.productId === next.productId);
+                const selectedProduct = db.products.find((item) => item.id === next.productId);
+                const candidates = db.listings.filter((item) => item.productId === next.productId && listingReservesProductStock(item, selectedProduct));
                 const selectedListing = candidates.find((item) => (item.marketplaces || (item.marketplace ? String(item.marketplace).split(",").map((channel) => channel.trim()) : [])).includes(value)) || null;
                 next.listingId = selectedListing ? selectedListing.id : "";
-                const selectedProduct = db.products.find((item) => item.id === next.productId);
                 if (selectedProduct) next.unitPrice = String(selectedListing && selectedListing.price != null ? selectedListing.price : selectedProduct.price || "");
               }
               if (type === "review" && field.key === "orderId") {
@@ -3086,6 +3115,17 @@ export default function App() {
       if (!Array.isArray(values.marketplaces) || values.marketplaces.length === 0) { Alert.alert("Choose sales channels", "Select at least one place where you sell this listing."); return false; }
       const listingSku = String(values.listingSku || "").trim().toLowerCase();
       if (!listingSku || db.listings.some((item) => item.id !== (record && record.id) && String(item.listingSku || "").trim().toLowerCase() === listingSku)) { Alert.alert("Choose a unique listing SKU", "Each marketplace listing needs its own SKU. Check the code and try again."); return false; }
+      if (values.status === "Sold" && !(record && record.status === "Sold" && record.needsArchive)) {
+        Alert.alert("Record the sale first", "Recording a sale deducts the finished product from inventory and marks the linked listing sold automatically. Use Pause or Archive to remove an unsold listing.");
+        return false;
+      }
+      const startDate = String(values.startDate || "");
+      const nextStatus = values.status === "Paused" ? "Paused" : startDate ? (startDate > today ? "Scheduled" : "Active") : values.status || "Draft";
+      const keepsOwnReservation = !!record && !record.archived && !record.needsArchive && record.productId === selected.id && record.status === "Active" && (!record.startDate || record.startDate <= today);
+      if (nextStatus === "Active" && !keepsOwnReservation && productAvailableUnits(selected, db.listings) <= 0) {
+        Alert.alert("No finished stock ready to list", "This product’s finished stock is already reserved by another live listing, or there is no finished inventory on hand. Pause or archive the other unsold listing, or make more stock before creating another active listing.");
+        return false;
+      }
     }
     if (type === "order") {
       if (record && (record.items || []).length > 1) { Alert.alert("This sale has multiple products", "This version can safely edit one-product sales. Keep this order unchanged so its product lines and inventory history are preserved."); return false; }
@@ -3095,14 +3135,19 @@ export default function App() {
       saleProduct = db.products.find((x) => x.id === values.productId && (active(x) || !!record));
       saleListing = values.listingId ? db.listings.find((item) => item.id === values.listingId && item.productId === values.productId) : null;
       if (values.listingId && !saleListing) { Alert.alert("Check the listing", "Choose a listing connected to the product in this sale, or clear the listing field."); return false; }
+      if (!record && saleListing && !listingReservesProductStock(saleListing, saleProduct)) saleListing = null;
       const enteredQuantity = asNumber(values.quantity, 0);
       if (!Number.isFinite(enteredQuantity)) { Alert.alert("Check the sale quantity", "Enter a valid number for the quantity."); return false; }
       saleQty = enteredQuantity;
       if (!saleProduct || saleQty <= 0) { Alert.alert("Check this sale", "Choose an active product and enter a quantity above zero."); return false; }
       const quantityAlreadyOnThisSale = record ? (record.items || []).filter((item) => item.productId === saleProduct.id).reduce((sum, item) => sum + (Number(item.quantity) || 0), 0) : 0;
-      const availableForEdit = (Number(saleProduct.inventory) || 0) + quantityAlreadyOnThisSale;
+      const savedListingId = record && (record.listingId || record.items && record.items[0] && record.items[0].listingId);
+      const thisSaleUsesListing = !!saleListing && (listingReservesProductStock(saleListing, saleProduct) || savedListingId === saleListing.id);
+      const availableForEdit = thisSaleUsesListing
+        ? Math.max(0, Number(saleProduct.inventory) || 0) + quantityAlreadyOnThisSale
+        : productAvailableUnits(saleProduct, db.listings) + quantityAlreadyOnThisSale;
       if (availableForEdit < saleQty) {
-        Alert.alert("Not enough finished inventory", "There are " + availableForEdit + " available after accounting for the current sale. Record production or adjust inventory before saving.");
+        Alert.alert("Not enough finished inventory ready to sell", "There are " + availableForEdit + " units available after accounting for active listing reservations and the current sale. Record production, or pause/archive the unsold listing before recording a direct sale.");
         return false;
       }
     }
@@ -3199,8 +3244,18 @@ export default function App() {
           const changes = [];
           if (listing.productName !== nextListingName) changes.push({ field: "listing name", from: listing.productName || "", to: nextListingName });
           if (listing.productSku !== sku) changes.push({ field: "product SKU", from: listing.productSku || "", to: sku });
+          const item = { ...listing, productName: nextListingName, productSku: sku };
+          if (startingInventory <= 0 && active(listing) && !listing.needsArchive && (listing.status === "Active" || listing.status === "Scheduled")) {
+            item.status = "Paused";
+            item.needsArchive = true;
+            item.soldOutAt = today;
+            item.soldOutOrderId = null;
+            item.soldOutPreviousStatus = listing.status || "Active";
+            changes.push({ field: "status", from: listing.status || "Active", to: "Paused" }, { field: "needsArchive", from: !!listing.needsArchive, to: true });
+          }
           if (!changes.length) return listing;
-          return { ...listing, productName: nextListingName, productSku: sku, updatedAt: syncDate, auditLog: (listing.auditLog || []).concat([{ id: uid("audit"), action: "Linked product details synced", date: syncDate, changes }]) };
+          const stockNote = item.needsArchive && item.soldOutOrderId == null ? " Finished inventory was manually set to zero, so this listing was paused and needs review." : "";
+          return { ...item, updatedAt: syncDate, auditLog: (listing.auditLog || []).concat([{ id: uid("audit"), action: "Linked product details synced", date: syncDate, changes, note: "Product name or SKU synced." + stockNote }]) };
         });
         if (recipeInventoryAdjustments.length) {
           next.components = old.components.map((component) => {
@@ -3304,11 +3359,15 @@ export default function App() {
         if (saleQty > 0) {
           const now = new Date().toISOString();
           next.listings = old.listings.map((listing) => {
+            if (listing.soldOutOrderId === order.id && listing.productId !== product.id) return { ...listing, status: listing.soldOutPreviousStatus || "Active", needsArchive: false, soldOutAt: null, soldOutOrderId: null, soldOutPreviousStatus: null, auditLog: (listing.auditLog || []).concat([{ id: uid("audit"), action: "Listing stock status cleared after sale product changed", date: now, changes: [{ field: "status", from: listing.status || "Sold", to: listing.soldOutPreviousStatus || "Active" }, { field: "needsArchive", from: true, to: false }] }]) };
             if (listing.productId !== product.id || !active(listing)) return listing;
+            if (!["Active", "Scheduled"].includes(listing.status) && listing.soldOutOrderId !== order.id) return listing;
             if (remainingProductStock <= 0) {
-              if (listing.needsArchive && listing.status === "Sold" && listing.soldOutOrderId === order.id) return listing;
+              const soldThroughThisListing = !!saleListing && listing.id === saleListing.id;
+              const soldOutStatus = soldThroughThisListing ? "Sold" : "Out of stock";
+              if (listing.needsArchive && listing.status === soldOutStatus && listing.soldOutOrderId === order.id) return listing;
               const previousStatus = listing.needsArchive ? listing.soldOutPreviousStatus || "Active" : listing.status || "Active";
-              return { ...listing, status: "Sold", needsArchive: true, soldOutAt: today, soldOutOrderId: order.id, soldOutPreviousStatus: previousStatus, auditLog: (listing.auditLog || []).concat([{ id: uid("audit"), action: "Listing sold out", date: now, changes: [{ field: "status", from: listing.status || "Active", to: "Sold" }, { field: "needsArchive", from: !!listing.needsArchive, to: true }], note: "Finished inventory reached zero after " + order.orderSku }]) };
+              return { ...listing, status: soldOutStatus, needsArchive: true, soldOutAt: today, soldOutOrderId: order.id, soldOutPreviousStatus: previousStatus, auditLog: (listing.auditLog || []).concat([{ id: uid("audit"), action: soldThroughThisListing ? "Listing sold out" : "Listing paused because product stock sold out", date: now, changes: [{ field: "status", from: listing.status || "Active", to: soldOutStatus }, { field: "needsArchive", from: !!listing.needsArchive, to: true }], note: "Finished inventory reached zero after " + order.orderSku + (soldThroughThisListing ? " through this listing" : "; this listing did not record the sale") }]) };
             }
             if (listing.soldOutOrderId === order.id) return { ...listing, status: listing.soldOutPreviousStatus || "Active", needsArchive: false, soldOutAt: null, soldOutOrderId: null, soldOutPreviousStatus: null, auditLog: (listing.auditLog || []).concat([{ id: uid("audit"), action: "Sold-out status cleared after sale correction", date: now, changes: [{ field: "status", from: "Sold", to: listing.soldOutPreviousStatus || "Active" }, { field: "needsArchive", from: true, to: false }] }]) };
             return listing;
@@ -3372,7 +3431,7 @@ export default function App() {
     const recipeProducts = key === "components" ? db.products.filter((item) => active(item) && (item.recipe || []).some((part) => part.componentId === record.id)) : [];
     const unsoldUnits = key === "products" ? Math.max(0, Number(record.inventory) || 0) : 0;
     const message = key === "listings"
-      ? "This archives only the marketplace listing. It does not archive the linked product or return any materials. The product and its finished stock stay in your catalog."
+      ? "This archives only the marketplace listing. Any unsold finished units reserved by this listing become ready to sell again on the linked product. Component materials stay consumed because the finished product still exists. Units recorded as sold stay deducted from product inventory."
       : key === "products" ? "This archives the product" + (activeListings ? " and " + activeListings + " active unsold listing" + (activeListings === 1 ? "" : "s") : "") + (unsoldUnits > 0 ? ". It returns materials only for the " + unsoldUnits + " finished unit" + (unsoldUnits === 1 ? "" : "s") + " still in stock. Materials already used for recorded sales stay consumed." : ". Finished inventory is zero, so no materials will be returned.") + " Listings connected to recorded sales and all orders stay unchanged. Restoring this product will use materials again for the stock being restored."
         : recipeProducts.length ? "This keeps its history and hides it from active lists. It is used by " + recipeProducts.map((item) => item.name).join(", ") + ". Production for those products will need this component restored or replaced in the recipe."
           : "This keeps its history and hides it from active lists.";
@@ -3868,6 +3927,11 @@ export default function App() {
     if (!relistEditor) return;
     const listing = db.listings.find((item) => item.id === relistEditor.id);
     if (!listing) { setRelistEditor(null); return; }
+    const product = db.products.find((item) => item.id === listing.productId && active(item));
+    if (!product || productAvailableUnits(product, db.listings) <= 0) {
+      Alert.alert("No finished stock ready to relist", "Make or restock the product, or pause/archive another live listing first. Relisting reserves the available finished units again.");
+      return;
+    }
     const now = new Date().toISOString();
     setData((old) => ({
       ...old,
@@ -4471,10 +4535,11 @@ export default function App() {
     const readyToShip = db.orders.filter((order) => !order.archived && !order.refundedAt && ["Needs Packaging", "Packaging"].includes(order.status)).length;
     const shippedOrders = db.orders.filter((order) => !order.archived && !order.refundedAt && order.status === "Shipped").length;
     const todayTasks = openTasks.filter((task) => task.dueDate === TODAY).length;
-    const activeListings = db.listings.filter((item) => active(item));
+    const activeListings = db.listings.filter(active);
+    const liveListings = activeListings.filter((listing) => listingReservesProductStock(listing, db.products.find((product) => product.id === listing.productId)));
     const activeProducts = db.products.filter(active);
     const activeListingsByProduct = new Map();
-    activeListings.forEach((listing) => activeListingsByProduct.set(listing.productId, (activeListingsByProduct.get(listing.productId) || 0) + 1));
+    liveListings.forEach((listing) => activeListingsByProduct.set(listing.productId, (activeListingsByProduct.get(listing.productId) || 0) + 1));
     const productsWithListings = activeProducts.filter((product) => activeListingsByProduct.has(product.id));
     const recipeComponentIds = new Set(activeProducts.flatMap((product) => (product.recipe || []).map((part) => part.componentId).filter(Boolean)));
     const finishedProductMaterials = new Map();
@@ -4597,7 +4662,7 @@ export default function App() {
           <View style={styles.sectionHeadingRow}><Text style={styles.sectionTitle}>Your business snapshot</Text></View>
           <View style={styles.summaryGrid}>
             <Pressable android_ripple={{ color: COLORS.ripple }} onPress={() => navigateToScreen("Components")} style={({ pressed }) => [styles.summaryTile, pressed && styles.pressedState]}><Text style={styles.summaryNumber}>{db.components.filter(active).length}</Text><Text style={styles.summaryLabel}>Components</Text><Text style={styles.summarySub}>{lowStock.length} low stock</Text></Pressable>
-            <Pressable android_ripple={{ color: COLORS.ripple }} onPress={() => navigateToScreen("Products")} style={({ pressed }) => [styles.summaryTile, pressed && styles.pressedState]}><Text style={styles.summaryNumber}>{visibleProducts.length}</Text><Text style={styles.summaryLabel}>Products</Text><Text style={styles.summarySub}>{visibleProducts.reduce((sum, x) => sum + (Number(x.inventory) || 0), 0)} ready to sell</Text></Pressable>
+            <Pressable android_ripple={{ color: COLORS.ripple }} onPress={() => navigateToScreen("Products")} style={({ pressed }) => [styles.summaryTile, pressed && styles.pressedState]}><Text style={styles.summaryNumber}>{visibleProducts.length}</Text><Text style={styles.summaryLabel}>Products</Text><Text style={styles.summarySub}>{visibleProducts.reduce((sum, product) => sum + productAvailableUnits(product, db.listings), 0)} ready to sell</Text></Pressable>
             <Pressable android_ripple={{ color: COLORS.ripple }} onPress={() => navigateToScreen("Orders")} style={({ pressed }) => [styles.summaryTile, pressed && styles.pressedState]}><Text style={styles.summaryNumber}>{totals.orders}</Text><Text style={styles.summaryLabel}>Orders</Text><Text style={styles.summarySub}>{orderNeedsAttention.length} in progress</Text></Pressable>
             <Pressable android_ripple={{ color: COLORS.ripple }} onPress={() => navigateToScreen("Listings")} style={({ pressed }) => [styles.summaryTile, pressed && styles.pressedState]}><Text style={styles.summaryNumber}>{activeListings.length}</Text><Text style={styles.summaryLabel}>Listings</Text><Text style={styles.summarySub}>{soldListingsNeedArchive.length} sold out to archive</Text></Pressable>
             <Pressable android_ripple={{ color: COLORS.ripple }} onPress={() => navigateToScreen("Reviews")} style={({ pressed }) => [styles.summaryTile, pressed && styles.pressedState]}><Text style={styles.summaryNumber}>{averageStars}</Text><Text style={styles.summaryLabel}>Shop rating</Text><Text style={styles.summarySub}>{shopReviews.length} reviews saved</Text></Pressable>
@@ -4610,7 +4675,7 @@ export default function App() {
           <View style={styles.sectionHeadingRow}><Text style={styles.sectionTitle}>Products, materials &amp; listings</Text><Text style={styles.subtle}>Connected inventory</Text></View>
           <View style={styles.metricGrid}>
             <Metric label="Components in active recipes" value={String(recipeComponentIds.size)} sub={activeProducts.filter((product) => (product.recipe || []).length > 0).length + " products use materials"} />
-            <Metric label="Products with active listings" value={String(productsWithListings.length)} sub={activeListings.length + " active listings across " + productsWithListings.length + " products"} />
+            <Metric label="Products with active listings" value={String(productsWithListings.length)} sub={liveListings.length + " live listings across " + productsWithListings.length + " products"} />
           </View>
           <Card>
             <Text style={styles.cardTitle}>Materials in finished inventory</Text>
@@ -4619,7 +4684,7 @@ export default function App() {
           </Card>
           <Card>
             <Text style={styles.cardTitle}>Products represented by active listings</Text>
-            {productsWithListings.length ? productsWithListings.slice(0, 10).map((product) => <Pressable key={product.id} onPress={() => navigateToScreen("Listings")} style={styles.detailLine}><View style={styles.flex}><Text style={styles.detailLabel}>{product.name}</Text><Text style={styles.fieldHint}>{product.sku || "No SKU"} · {product.inventory || 0} finished units</Text></View><Text style={styles.detailValue}>{activeListingsByProduct.get(product.id)} listing{activeListingsByProduct.get(product.id) === 1 ? "" : "s"}</Text></Pressable>) : <Text style={styles.bodyText}>No active products are linked to an active listing. Create or restore a listing to connect them.</Text>}
+            {productsWithListings.length ? productsWithListings.slice(0, 10).map((product) => <Pressable key={product.id} onPress={() => navigateToScreen("Listings")} style={styles.detailLine}><View style={styles.flex}><Text style={styles.detailLabel}>{product.name}</Text><Text style={styles.fieldHint}>{product.sku || "No SKU"} · {productAvailableUnits(product, db.listings)} ready to sell · {Number(product.inventory) || 0} finished on hand</Text></View><Text style={styles.detailValue}>{activeListingsByProduct.get(product.id)} live listing{activeListingsByProduct.get(product.id) === 1 ? "" : "s"}</Text></Pressable>) : <Text style={styles.bodyText}>No active products are linked to an active listing. Create or restore a listing to connect them.</Text>}
             {productsWithListings.length > 10 ? <Text style={styles.fieldHint}>Showing 10 of {productsWithListings.length} linked products.</Text> : null}
           </Card>
         </>
@@ -4725,8 +4790,8 @@ export default function App() {
     const inventoryValue = activeProducts.reduce((sum, item) => sum + (Number(item.inventory) || 0) * (Number(item.price) || 0), 0);
     return (
       <>
-        <View style={styles.infoBanner}><Text style={styles.infoBannerTitle}>Your product catalog</Text><Text style={styles.infoBannerText}>Products share finished stock with orders and listing availability. Production checks each saved recipe against component stock.</Text><View style={styles.actionRow}><Action label="＋ Add product" onPress={() => beginAdd("product")} /><Action label="Bulk edit names & descriptions" quiet onPress={() => setBulkEditType("product")} /><Action label="＋ Make products" quiet onPress={() => navigateToScreen("Production")} />{!showArchivedProducts && outOfStockProducts.length ? <Action label={"Archive all out of stock · " + outOfStockProducts.length} quiet onPress={archiveAllOutOfStockProducts} /> : null}</View>{!showArchivedProducts && outOfStockProducts.length ? <Text style={styles.infoBannerText}>One click also archives linked unsold listings. Listings tied to recorded sales, orders, production history, and component stock stay unchanged. Restore products and their unsold listings anytime from Show archived products.</Text> : null}</View>
-        <View style={styles.metricGrid}><Metric label="Active products" value={String(activeProducts.length)} /><Metric label="Finished units" value={String(activeProducts.reduce((sum, item) => sum + (Number(item.inventory) || 0), 0))} /><Metric label="Out of stock" value={String(activeProducts.filter((item) => Number(item.inventory) <= 0).length)} /><Metric label="Retail value on hand" value={money(inventoryValue, db.currency)} /></View>
+        <View style={styles.infoBanner}><Text style={styles.infoBannerTitle}>Your product catalog</Text><Text style={styles.infoBannerText}>Live marketplace listings reserve a product’s finished stock. Product cards show ready-to-sell units separately from finished units on hand; archiving or pausing an unsold listing releases the remaining finished units. Production checks each recipe against component stock.</Text><View style={styles.actionRow}><Action label="＋ Add product" onPress={() => beginAdd("product")} /><Action label="Bulk edit names & descriptions" quiet onPress={() => setBulkEditType("product")} /><Action label="＋ Make products" quiet onPress={() => navigateToScreen("Production")} />{!showArchivedProducts && outOfStockProducts.length ? <Action label={"Archive all out of stock · " + outOfStockProducts.length} quiet onPress={archiveAllOutOfStockProducts} /> : null}</View>{!showArchivedProducts && outOfStockProducts.length ? <Text style={styles.infoBannerText}>One click also archives linked unsold listings. Listings tied to recorded sales, orders, production history, and component stock stay unchanged. Restore products and their unsold listings anytime from Show archived products.</Text> : null}</View>
+        <View style={styles.metricGrid}><Metric label="Active products" value={String(activeProducts.length)} /><Metric label="Finished units on hand" value={String(activeProducts.reduce((sum, item) => sum + (Number(item.inventory) || 0), 0))} /><Metric label="Out of stock" value={String(activeProducts.filter((item) => Number(item.inventory) <= 0).length)} /><Metric label="Retail value on hand" value={money(inventoryValue, db.currency)} /></View>
         <ChoiceChips label="Filter products" options={["All", ...categories]} value={productCategoryFilter} onChange={setProductCategoryFilter} />
         <View style={styles.actionRow}><Action label={expandedAttributeFilters.products ? "Hide attribute filters" : "Filter by color, material, size, or audience" + (attributeFilterCount("products") ? " · " + attributeFilterCount("products") + " active" : "")} quiet onPress={() => toggleAttributeFilters("products")} />{attributeFilterCount("products") ? <Action label="Clear filters" quiet onPress={() => clearAttributeFilters("products")} /> : null}</View>
         {expandedAttributeFilters.products ? <>
@@ -4740,12 +4805,15 @@ export default function App() {
         {pagedProducts.length ? pagedProducts.map((item) => {
           const recipes = item.recipe || [];
           const productListings = db.listings.filter((listing) => listing.productId === item.id);
-          const activeProductListings = productListings.filter(active);
+          const activeProductListings = productListings.filter((listing) => listingReservesProductStock(listing, item));
+          const finishedOnHand = Math.max(0, Number(item.inventory) || 0);
+          const readyToSell = productAvailableUnits(item, db.listings);
+          const reservedByListings = Math.max(0, finishedOnHand - readyToSell);
           const expanded = expandedProductIds.includes(item.id);
           const toggleExpanded = () => setExpandedProductIds((old) => old.includes(item.id) ? [] : [item.id]);
           return (
             <Card key={item.id}>
-              <View style={styles.cardTop}><View style={styles.flex}><Text style={styles.recordTitle}>{item.name}</Text><Text style={styles.recordMeta}>{item.sku} · {item.category || "Other"} · {item.inventory} ready to sell</Text><Text style={styles.recordMeta}>{money(item.price, db.currency)} each · {money((Number(item.inventory) || 0) * (Number(item.price) || 0), db.currency)} retail value</Text><Text style={styles.recordMeta}>{recipes.length} component{recipes.length === 1 ? "" : "s"} in recipe · {activeProductListings.length} active listing{activeProductListings.length === 1 ? "" : "s"}</Text></View><View style={{ alignItems: "flex-end", gap: 6 }}><Pill text={item.archived ? "Archived" : Number(item.inventory) > 0 ? "In stock" : "Out of stock"} tone={item.archived ? "neutral" : Number(item.inventory) > 0 ? "green" : "amber"} /><Action label="Duplicate" quiet onPress={() => duplicateRecord("product", item)} /><Action label="Edit" quiet onPress={() => beginEdit("product", { ...item, price: String(item.price), inventory: String(item.inventory), recipe: recipes.map((part) => ({ ...part, quantity: String(part.quantity) })) })} /></View></View>
+              <View style={styles.cardTop}><View style={styles.flex}><Text style={styles.recordTitle}>{item.name}</Text><Text style={styles.recordMeta}>{item.sku} · {item.category || "Other"} · {readyToSell} ready to sell · {reservedByListings} reserved in live listings · {finishedOnHand} finished on hand</Text><Text style={styles.recordMeta}>{money(item.price, db.currency)} each · {money(finishedOnHand * (Number(item.price) || 0), db.currency)} retail value on hand</Text><Text style={styles.recordMeta}>{recipes.length} component{recipes.length === 1 ? "" : "s"} in recipe · {activeProductListings.length} live listing{activeProductListings.length === 1 ? "" : "s"}</Text></View><View style={{ alignItems: "flex-end", gap: 6 }}><Pill text={item.archived ? "Archived" : readyToSell > 0 ? "In stock" : finishedOnHand > 0 ? "Listed" : "Out of stock"} tone={item.archived ? "neutral" : readyToSell > 0 ? "green" : finishedOnHand > 0 ? "amber" : "amber"} /><Action label="Duplicate" quiet onPress={() => duplicateRecord("product", item)} /><Action label="Edit" quiet onPress={() => beginEdit("product", { ...item, price: String(item.price), inventory: String(item.inventory), recipe: recipes.map((part) => ({ ...part, quantity: String(part.quantity) })) })} /></View></View>
               <View style={styles.actionRow}><Action label={expanded ? "Hide details" : "Show details"} quiet onPress={toggleExpanded} />{expanded && recipes.length > 0 && !item.archived ? <Action label="Make" quiet onPress={() => { setProductionProduct(item.id); navigateToScreen("Production"); }} /> : null}</View>
               {expanded ? <>
                 {item.description || item.materials || item.notes ? <Text style={styles.bodyText}>{item.description || item.materials || item.notes}</Text> : null}
@@ -4809,6 +4877,10 @@ export default function App() {
   const renderListings = () => {
     const activeListings = db.listings.filter(active);
     const source = showArchivedListings ? db.listings.filter((item) => !active(item)) : activeListings;
+    const listingHasNoProductStock = (listing) => {
+      const product = db.products.find((item) => item.id === listing.productId);
+      return !!product && active(product) && Math.max(0, Number(product.inventory) || 0) <= 0 && !listing.needsArchive && (listing.status === "Active" || listing.status === "Scheduled");
+    };
     const filters = attributeFilters.listings || {};
     const matchesListingAttribute = (item, key, selected) => {
       const product = db.products.find((row) => row.id === item.productId);
@@ -4836,8 +4908,9 @@ export default function App() {
     ]).filter((plan) => plan && plan.date >= TODAY).sort((a, b) => a.date.localeCompare(b.date));
     const scheduledDiscounts = activeListings.reduce((sum, item) => sum + (item.discountPlans || []).filter((plan) => plan.startDate && plan.startDate > TODAY).length, 0);
     const relistsDue = activeListings.filter((item) => item.relistDate && item.relistDate >= TODAY).length;
-    const needsArchive = activeListings.filter((item) => item.needsArchive).length;
-    const actualListings = activeListings.filter((item) => item.status === "Active" && !item.needsArchive && (!item.startDate || item.startDate <= TODAY)).length;
+    const listingsNeedingStockReview = activeListings.filter((item) => item.needsArchive || listingHasNoProductStock(item));
+    const needsArchive = listingsNeedingStockReview.length;
+    const actualListings = activeListings.filter((item) => listingReservesProductStock(item, db.products.find((product) => product.id === item.productId))).length;
     const listingChannels = new Set(activeListings.flatMap((item) => item.marketplaces || (item.marketplace ? String(item.marketplace).split(",").map((channel) => channel.trim()) : [])).filter(Boolean));
     const representedProducts = new Set(activeListings.map((item) => item.productId).filter(Boolean));
     const combinedAskingPrices = activeListings.reduce((sum, item) => sum + (Number(item.price) || 0), 0);
@@ -4867,35 +4940,36 @@ export default function App() {
         Alert.alert("Nothing to copy", "This listing does not have a saved " + (kind === "title" ? "title" : "description") + " yet.");
         return;
       }
-      if (Platform.OS === "web") {
+      try {
         let copied = false;
-        try {
-          if (typeof navigator !== "undefined" && navigator.clipboard && navigator.clipboard.writeText) {
+        if (Platform.OS === "web" && typeof navigator !== "undefined" && navigator.clipboard && navigator.clipboard.writeText) {
+          try {
             await navigator.clipboard.writeText(text);
             copied = true;
-          }
-        } catch (_error) { copied = false; }
-        if (!copied && typeof document !== "undefined" && document.body && document.execCommand) {
-          let input = null;
-          try {
-            input = document.createElement("textarea");
-            input.value = text;
-            input.setAttribute("readonly", "");
-            input.style.position = "fixed";
-            input.style.left = "-9999px";
-            document.body.appendChild(input);
-            input.select();
-            copied = document.execCommand("copy");
-          } catch (_error) { copied = false; }
-          finally { if (input && input.parentNode) input.parentNode.removeChild(input); }
+          } catch (_clipboardError) { /* try the legacy browser clipboard below */ }
         }
-        Alert.alert(copied ? label + " copied" : "Could not copy automatically", copied ? "Ready to paste into your marketplace." : "Select the listing text and copy it manually.");
-        return;
-      }
-      try {
-        await Share.share({ title: "Copy " + label.toLowerCase(), message: text });
+        if (!copied && Platform.OS === "web" && typeof document !== "undefined" && document.body && typeof document.execCommand === "function") {
+          const textarea = document.createElement("textarea");
+          textarea.value = text;
+          textarea.setAttribute("readonly", "");
+          textarea.style.position = "fixed";
+          textarea.style.top = "0";
+          textarea.style.left = "-9999px";
+          textarea.style.opacity = "0";
+          document.body.appendChild(textarea);
+          textarea.focus();
+          textarea.select();
+          textarea.setSelectionRange(0, textarea.value.length);
+          copied = document.execCommand("copy");
+          document.body.removeChild(textarea);
+        }
+        if (copied) {
+          Alert.alert(label + " copied", "The exact saved text is on your clipboard and ready to paste.");
+        } else {
+          Alert.alert("Could not copy", "Clipboard access was unavailable. Try again or select the listing text and copy it manually.");
+        }
       } catch (_error) {
-        Alert.alert("Could not open sharing", "Open this listing's details and select the " + (kind === "title" ? "title" : "description") + " to copy it.");
+        Alert.alert("Could not copy", "Clipboard access was unavailable. Try again or select the listing text and copy it manually.");
       }
     };
     const copyProductDescriptionToListing = (item) => setData((old) => {
@@ -4931,13 +5005,13 @@ export default function App() {
     });
     return (
       <>
-        <View style={styles.infoBanner}><Text style={styles.infoBannerTitle}>Listings, promotion plans, and relists</Text><Text style={styles.infoBannerText}>Search and filter your marketplace listings. Sold-out products are flagged here so you can archive a listing or relist it after making more stock. Archiving a listing hides only that marketplace offer and never returns materials. Sold units stay consumed; archiving a product returns materials only for finished units still in stock.</Text><View style={styles.actionRow}><Action label="＋ Add listing" onPress={() => beginAdd("listing")} /><Action label="Bulk edit names & descriptions" quiet onPress={() => setBulkEditType("listing")} /><Action label="Listing analytics" quiet onPress={() => navigateToScreen("Listing Analytics")} /></View></View>
+        <View style={styles.infoBanner}><Text style={styles.infoBannerTitle}>Listings, promotion plans, and relists</Text><Text style={styles.infoBannerText}>Search and filter your marketplace listings. Live listings reserve the linked product’s finished stock, so it no longer shows as ready to sell. Archiving or pausing an unsold listing releases those finished units back to the product. Sold units stay deducted, and sold listings keep their sold count in history.</Text><View style={styles.actionRow}><Action label="＋ Add listing" onPress={() => beginAdd("listing")} /><Action label="Bulk edit names & descriptions" quiet onPress={() => setBulkEditType("listing")} /><Action label="Listing analytics" quiet onPress={() => navigateToScreen("Listing Analytics")} /></View></View>
         <View style={styles.metricGrid}><Metric label="Live now" value={String(actualListings)} /><Metric label="Need archiving" value={String(needsArchive)} /><Metric label="Discounts planned" value={String(scheduledDiscounts)} /><Metric label="Relists coming up" value={String(relistsDue)} /></View>
         <View style={styles.metricGrid}><Metric label="Sales channels" value={String(listingChannels.size)} /><Metric label="Products represented" value={String(representedProducts.size)} /><Metric label="Combined asking prices" value={money(combinedAskingPrices, db.currency)} /><Metric label="Product descriptions to review" value={String(descriptionsToReview.length)} /></View>
         {descriptionsToUpdate.length ? <Card><Text style={styles.infoBannerTitle}>Product descriptions changed</Text><Text style={styles.bodyText}>{descriptionsToUpdate.length} listing{descriptionsToUpdate.length === 1 ? " has" : "s have"} a newer product description. Review the listing before copying so you can keep marketplace wording that needs to stay different.</Text>{descriptionsToUpdate.slice(0, 5).map((item) => <View key={item.id} style={styles.detailLine}><View style={styles.flex}><Text style={styles.detailLabel}>{item.productName}</Text><Text style={styles.fieldHint}>{item.marketplace || (item.marketplaces || []).join(", ") || "Marketplace not saved"}</Text></View><Action label="Update description" onPress={() => copyProductDescriptionToListing(item)} /></View>)}</Card> : null}
-         {needsArchive ? <Card><Text style={styles.cardTitle}>Sold-out listings need attention</Text>{activeListings.filter((item) => item.needsArchive).map((item) => {
+         {needsArchive ? <Card><Text style={styles.cardTitle}>Listings with no available stock need attention</Text>{listingsNeedingStockReview.map((item) => {
            const product = db.products.find((entry) => entry.id === item.productId);
-           return <View key={item.id} style={styles.soldOutListingRow}><View style={styles.soldOutListingInfo}><Text style={styles.recordTitle} numberOfLines={2}>{item.productName}</Text><Text style={styles.recordMeta}>{item.listingSku} · {item.marketplace || (item.marketplaces || []).join(", ") || "Marketplace not saved"} · out of stock</Text></View><View style={styles.soldOutListingActions}><Action label="Review" quiet onPress={() => openDetails("listing", item)} />{product && Number(product.inventory) > 0 ? <Action label="Relist now" onPress={() => setRelistEditor(item)} /> : product ? <Action label="Make more" quiet onPress={() => { setProductionProduct(product.id); navigateToScreen("Production"); }} /> : null}<Action label="Archive" quiet onPress={() => archiveRecord("listings", item, "listing")} /></View></View>;
+           return <View key={item.id} style={styles.soldOutListingRow}><View style={styles.soldOutListingInfo}><Text style={styles.recordTitle} numberOfLines={2}>{item.productName}</Text><Text style={styles.recordMeta}>{item.listingSku} · {item.marketplace || (item.marketplaces || []).join(", ") || "Marketplace not saved"} · {item.status === "Sold" ? (soldQuantityForListing(item, db.orders) || 1) + " sold" : "out of stock"}</Text></View><View style={styles.soldOutListingActions}><Action label="Review" quiet onPress={() => openDetails("listing", item)} />{product && Number(product.inventory) > 0 ? <Action label="Relist now" onPress={() => setRelistEditor(item)} /> : product ? <Action label="Make more" quiet onPress={() => { setProductionProduct(product.id); navigateToScreen("Production"); }} /> : null}<Action label="Archive" quiet onPress={() => archiveRecord("listings", item, "listing")} /></View></View>;
          })}</Card> : null}
          <ChoiceChips label="Listings" options={[{ label: `Active · ${activeListings.length}`, value: false }, { label: `Archived · ${db.listings.length - activeListings.length}`, value: true }]} value={showArchivedListings} onChange={(showArchived) => { setShowArchivedListings(showArchived); setListingStatusFilter("All"); setListingChannelFilter("All"); }} />
          <ChoiceChips label="Listing status" options={["All", ...Array.from(new Set(source.map((item) => item.status || "Draft"))).sort()]} value={listingStatusFilter} onChange={setListingStatusFilter} />
@@ -4957,20 +5031,30 @@ export default function App() {
           </Card>)}
         </> : null}
         <View style={styles.sectionHeadingRow}><Text style={styles.sectionTitle}>{showArchivedListings ? "Archived listings" : "Your marketplace listings"}</Text></View>
-        {pagedListings.length ? pagedListings.map((item) => (
-          <Card key={item.id}><View style={styles.cardTop}><View style={styles.flex}><Text style={styles.recordTitle}>{item.productName}</Text>{item.listingNameOverride ? <Text style={styles.recordMeta}>Custom listing title</Text> : null}<Text style={styles.recordMeta}>{item.listingSku || "LIST SKU missing"} · {item.productSku || "Product SKU missing"}</Text><Text style={styles.recordMeta}>{item.marketplace || "Marketplace not saved"} · {item.price != null ? money(item.price, db.currency) : "Price not saved"}</Text>{listingDescriptionNeedsUpdate(item) ? <Text style={styles.errorText}>Product description changed · review details</Text> : null}</View><View style={{ alignItems: "flex-end", gap: 6 }}><Pill text={item.archived ? "Archived" : item.needsArchive ? "Sold · archive this listing" : item.status === "Paused" ? "Paused" : item.startDate && item.startDate > TODAY ? "Planned" : item.status || "Draft"} tone={item.needsArchive ? "red" : item.archived ? "neutral" : item.status === "Active" ? "green" : "amber"} /><Action label="Edit" quiet onPress={() => editListing(item)} /></View></View>
+        {pagedListings.length ? pagedListings.map((item) => {
+          const soldCount = soldQuantityForListing(item, db.orders);
+          const noProductStock = listingHasNoProductStock(item);
+          const statusText = item.archived
+            ? soldCount > 0 ? soldCount + " sold · Archived" : item.status === "Sold" ? "Sold · Archived" : "Archived"
+            : item.needsArchive ? item.status === "Sold" ? (soldCount || 1) + " sold · archive this listing" : "Out of stock · archive this listing"
+              : noProductStock ? "Out of stock · make more or archive"
+              : item.status === "Paused" ? "Paused" : item.startDate && item.startDate > TODAY ? "Planned" : item.status || "Draft";
+          return <Card key={item.id}><View style={styles.cardTop}><View style={styles.flex}><Text style={styles.recordTitle}>{item.productName}</Text>{item.listingNameOverride ? <Text style={styles.recordMeta}>Custom listing title</Text> : null}<Text style={styles.recordMeta}>{item.listingSku || "LIST SKU missing"} · {item.productSku || "Product SKU missing"}</Text><Text style={styles.recordMeta}>{item.marketplace || "Marketplace not saved"} · {item.price != null ? money(item.price, db.currency) : "Price not saved"}</Text>{soldCount > 0 ? <Text style={styles.recordMeta}>{soldCount} sold total on this listing</Text> : null}{listingDescriptionNeedsUpdate(item) ? <Text style={styles.errorText}>Product description changed · review details</Text> : null}</View><View style={{ alignItems: "flex-end", gap: 6 }}><Pill text={statusText} tone={item.needsArchive || noProductStock ? "red" : item.archived ? "neutral" : item.status === "Active" ? "green" : "amber"} /><Action label="Edit" quiet onPress={() => editListing(item)} /></View></View>
             <View style={styles.actionRow}><Action label={expandedListingIds.includes(item.id) ? "Hide details" : "Show details"} quiet onPress={() => setExpandedListingIds((old) => old.includes(item.id) ? [] : [item.id])} /><Action label="Copy title" quiet onPress={() => copyListingText(item, "title")} /><Action label="Copy description" quiet onPress={() => copyListingText(item, "description")} /></View>
             {expandedListingIds.includes(item.id) ? <>
             {(() => {
               const discountPlans = item.discountPlans || [];
               const currentPlan = discountPlans.filter((plan) => plan.startDate <= TODAY && (!plan.endDate || plan.endDate >= TODAY)).sort((a, b) => b.startDate.localeCompare(a.startDate))[0];
               const product = db.products.find((row) => row.id === item.productId);
+              const productOnHand = Math.max(0, Number(product && product.inventory) || 0);
+              const productReadyToSell = productAvailableUnits(product, db.listings);
+              const productReserved = Math.max(0, productOnHand - productReadyToSell);
               const channels = channelsForListing(item);
               const currentPrice = Math.max(0, asNumber(item.price, 0)) * (currentPlan ? 1 - Number(currentPlan.percent) / 100 : 1);
               const payoutEstimates = payoutEstimatesForListing(item, currentPrice);
               const hasFeeEstimate = payoutEstimates.some((estimate) => estimate.configured);
               return <>
-                <View style={styles.recipePreview}><Text style={styles.fieldLabel}>Linked product and materials</Text>{product ? <><Text style={styles.bodyText}>{product.name} · {product.sku} · {Number(product.inventory) || 0} finished units in stock · {(product.recipe || []).length} component types in recipe</Text>{(product.recipe || []).map((part) => { const component = db.components.find((row) => row.id === part.componentId); return <Text key={part.componentId} style={styles.fieldHint}>{part.name}: {part.quantity} {part.unit || component && component.unit || "units"} per product · {component ? component.quantity + " available" : "component missing"}</Text>; })}<View style={styles.actionRow}><Action label="Open product catalog" quiet onPress={() => navigateToScreen("Products")} /><Action label="Copy product name" quiet onPress={() => copyProductNameToListing(item)} />{product.archived ? <Action label="Restore product and materials" onPress={() => restoreRecord("products", product)} /> : <Action label={Number(product.inventory) > 0 ? "Archive product · return materials for unsold stock" : "Archive product · no materials to return"} onPress={() => archiveRecord("products", product, "product")} />}</View><Text style={styles.fieldHint}>Archiving this listing alone never returns materials. Product archiving returns materials only for finished units still in stock; sold units stay consumed.</Text></> : <Text style={styles.bodyText}>The linked product is missing. Check the product catalog and this listing’s saved link.</Text>}</View>
+                <View style={styles.recipePreview}><Text style={styles.fieldLabel}>Linked product and materials</Text>{product ? <><Text style={styles.bodyText}>{product.name} · {product.sku} · {productReadyToSell} ready to sell · {productReserved} reserved in live listings · {productOnHand} finished on hand · {(product.recipe || []).length} component types in recipe</Text>{(product.recipe || []).map((part) => { const component = db.components.find((row) => row.id === part.componentId); return <Text key={part.componentId} style={styles.fieldHint}>{part.name}: {part.quantity} {part.unit || component && component.unit || "units"} per product · {component ? component.quantity + " available" : "component missing"}</Text>; })}<View style={styles.actionRow}><Action label="Open product catalog" quiet onPress={() => navigateToScreen("Products")} /><Action label="Copy product name" quiet onPress={() => copyProductNameToListing(item)} />{product.archived ? <Action label="Restore product and materials" onPress={() => restoreRecord("products", product)} /> : <Action label={Number(product.inventory) > 0 ? "Archive product · return materials for unsold stock" : "Archive product · no materials to return"} onPress={() => archiveRecord("products", product, "product")} />}</View><Text style={styles.fieldHint}>Archiving this listing releases its unsold finished units back to ready-to-sell stock. Component materials remain consumed because the product still exists. Product archiving returns materials only for finished units still in stock; sold units stay consumed.</Text></> : <Text style={styles.bodyText}>The linked product is missing. Check the product catalog and this listing’s saved link.</Text>}</View>
                 <View style={styles.recipePreview}><Text style={styles.fieldLabel}>Marketplace description</Text>{item.description ? <Text style={styles.bodyText}>{item.description}</Text> : <Text style={styles.fieldHint}>No marketplace description saved yet.</Text>}{item.descriptionSource === "product" ? <Text style={listingDescriptionNeedsUpdate(item) ? styles.errorText : styles.fieldHint}>{listingDescriptionNeedsUpdate(item) ? "The product description changed since this copy was made." : "Copied from the linked product."}</Text> : productDescriptionDiffers(item) ? <Text style={styles.fieldHint}>This listing keeps its own marketplace description. The linked product text is different.</Text> : <Text style={styles.fieldHint}>This listing description currently matches the linked product.</Text>}<View style={styles.actionRow}><Action label={item.description ? "Edit description" : "Add description"} quiet onPress={() => editListing(item)} /><Action label={listingDescriptionNeedsUpdate(item) ? "Update from product" : "Copy product description"} onPress={() => copyProductDescriptionToListing(item)} /></View></View>
                 <View style={styles.channelChipRow}>{channels.map((channel) => <View key={channel} style={styles.channelChip}><Text style={styles.channelChipText}>{channel}</Text></View>)}</View>
                 <View style={styles.detailRow}><Text style={styles.detailText}>List price {money(item.price, db.currency)}</Text><Pill text={currentPlan ? `${currentPlan.percent}% off now` : `${discountPlans.length} discount plan${discountPlans.length === 1 ? "" : "s"}`} tone={currentPlan ? "green" : "neutral"} /></View>
@@ -4992,17 +5076,17 @@ export default function App() {
                 })}</View> : null}
               </>;
             })()}
-             <View style={styles.actionRow}>{!item.archived ? <><Action label="＋ Add discount plan" onPress={() => openDiscountEditor(item, null)} /><Action label="Plan relist" quiet onPress={() => editListing(item)} />{item.needsArchive ? <>{Number((db.products.find((product) => product.id === item.productId) || {}).inventory) > 0 ? <Action label="Relist now" onPress={() => setRelistEditor(item)} /> : <Action label="Make more first" quiet onPress={() => { const product = db.products.find((entry) => entry.id === item.productId); if (product) { setProductionProduct(product.id); navigateToScreen("Production"); } }} />}<Action label="Archive sold listing" onPress={() => archiveRecord("listings", item, "listing")} /></> : null}{!item.needsArchive ? <Action label="Archive" quiet onPress={() => archiveRecord("listings", item, "listing")} /> : null}<Action label="Duplicate" quiet onPress={() => duplicateRecord("listing", item)} /><Action label="Delete" quiet onPress={() => permanentlyDeleteRecord("listings", item, "listing")} /></> : <Action label="Restore listing" onPress={() => restoreRecord("listings", item)} />}</View>
+             <View style={styles.actionRow}>{!item.archived ? <><Action label="＋ Add discount plan" onPress={() => openDiscountEditor(item, null)} /><Action label="Plan relist" quiet onPress={() => editListing(item)} />{item.needsArchive ? <>{Number((db.products.find((product) => product.id === item.productId) || {}).inventory) > 0 ? <Action label="Relist now" onPress={() => setRelistEditor(item)} /> : <Action label="Make more first" quiet onPress={() => { const product = db.products.find((entry) => entry.id === item.productId); if (product) { setProductionProduct(product.id); navigateToScreen("Production"); } }} />}<Action label={item.status === "Sold" ? "Archive sold listing" : "Archive out-of-stock listing"} onPress={() => archiveRecord("listings", item, "listing")} /></> : null}{!item.needsArchive ? <Action label="Archive" quiet onPress={() => archiveRecord("listings", item, "listing")} /> : null}<Action label="Duplicate" quiet onPress={() => duplicateRecord("listing", item)} /><Action label="Delete" quiet onPress={() => permanentlyDeleteRecord("listings", item, "listing")} /></> : <Action label="Restore listing" onPress={() => restoreRecord("listings", item)} />}</View>
             </> : null}
-          </Card>
-        )) : <EmptyState title={showArchivedListings ? "No archived listings" : "No listings match this filter"} body="Change the status or search, or add a new listing." action={showArchivedListings ? undefined : "Create a listing"} onPress={showArchivedListings ? undefined : () => beginAdd("listing")} />}
+          </Card>;
+        }) : <EmptyState title={showArchivedListings ? "No archived listings" : "No listings match this filter"} body="Change the status or search, or add a new listing." action={showArchivedListings ? undefined : "Create a listing"} onPress={showArchivedListings ? undefined : () => beginAdd("listing")} />}
         {pagedListings.length < list.length ? <View style={styles.actionRow}><Action label={"Show 60 more listings · " + (list.length - pagedListings.length) + " remaining"} quiet onPress={() => showMoreRows("listings")} /></View> : null}
       </>
     );
   };
 
   const listingAnalyticsChannels = (listing) => Array.from(new Set((Array.isArray(listing && listing.marketplaces) ? listing.marketplaces : String(listing && listing.marketplace || "").split(",")).map((channel) => String(channel || "").trim()).filter(Boolean)));
-  const listingAnalyticsIsActive = (listing) => !!listing && active(listing) && listing.status === "Active" && !listing.needsArchive && (!listing.startDate || listing.startDate <= TODAY);
+  const listingAnalyticsIsActive = (listing) => listingReservesProductStock(listing, db.products.find((product) => product.id === (listing && listing.productId)));
   const listingAnalyticsCanRecord = (listing) => !!listing && listingAnalyticsChannels(listing).length > 0;
   const listingAnalyticsCanBulkRecord = (listing) => listingAnalyticsCanRecord(listing) && !listing.archived;
   const openAnalyticsEntry = (mode, listing, marketplace) => {
