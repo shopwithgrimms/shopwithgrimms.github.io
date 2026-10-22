@@ -122,6 +122,7 @@ const THEME_SPECS = [
   ["Terracotta and Sage", "#B65C48", "#4C5946", "#F4E4DC", "#F5F6EE", "#FFFFFF", "#E1E2D6", "#2A2923", "#706F65"],
   ["Mustard and Plum", "#A57A1D", "#573C58", "#F3EACF", "#F8F5EE", "#FFFFFF", "#E4DED2", "#292521", "#716B66"],
   ["Bronze and Teal", "#9B6A31", "#286A69", "#F1E6D7", "#F4F7F3", "#FFFFFF", "#DFE4DA", "#292923", "#6D7066"],
+  ["Cherry Cola", "#B51E3A", "#71152A", "#F6DCE2", "#FFF5F4", "#FFFFFF", "#E8C9CE", "#2B1D20", "#78656A"],
 ];
 const mixHex = (first, second, amount) => {
   const a = first.replace("#", "");
@@ -139,22 +140,21 @@ const validHexColor = (value) => /^#[0-9A-Fa-f]{6}$/.test(String(value || ""));
 const CUSTOM_THEME_NAME = "Custom — choose your colors";
 const DEFAULT_CUSTOM_THEME = {
   mode: "dark",
-  paper: "#101418", card: "#1A2229", soft: "#172027", softAlt: "#202A32",
-  ink: "#F5F0F7", muted: "#BDB3C2", accent: "#6985A0",
-  line: "#3B4650", softLine: "#34414B", ripple: "#344D60",
+  accent: "#6985A0", wineDark: "#FFF7FA", rose: "#271416",
+  paper: "#101418", card: "#1A2229", line: "#3B4650", ink: "#F5F0F7", muted: "#BDB3C2",
+  sage: "#263C32", green: "#8AD7A8", amber: "#F2C76E", amberBg: "#3D321F",
+  red: "#FF9999", redBg: "#44292F", lavender: "#202027", soft: "#172027",
+  softAlt: "#202A32", softLine: "#34414B", placeholder: "#A99EAE", onAccent: "#FFF9F1",
+  accentMuted: "#6C4856", accentSoft: "#332833", ripple: "#344D60",
 };
 const CUSTOM_THEME_COLOR_GROUPS = [
-  { key: "surfaces", title: "Surfaces & backgrounds", subtitle: "Page, card, and soft container fills", colors: [["paper", "Main page background"], ["card", "Card and form surfaces"], ["soft", "Soft container background"], ["softAlt", "Alternative row background"]] },
-  { key: "typography", title: "Text & typography", subtitle: "Primary and secondary text colors", colors: [["ink", "Primary text and headings"], ["muted", "Secondary text and metadata"]] },
-  { key: "accents", title: "Accents & buttons", subtitle: "Brand actions and touch feedback", colors: [["accent", "Primary brand and button color"], ["ripple", "Touch feedback and pressed state"]] },
-  { key: "borders", title: "Borders & separators", subtitle: "Card borders and subtle dividers", colors: [["line", "Borders and dividers"], ["softLine", "Subtle inner borders"]] },
+  { key: "surfaces", title: "Page, cards, and rows", subtitle: "Main backgrounds, cards, soft areas, and status fills", colors: [["paper", "Page background"], ["card", "Cards, forms, and panels"], ["soft", "Soft background"], ["softAlt", "Alternate row background"], ["rose", "Rose-tinted background"], ["lavender", "Lavender-tinted background"], ["sage", "Green-tinted background"], ["amberBg", "Warning background"], ["redBg", "Alert background"], ["accentSoft", "Soft accent background"], ["accentMuted", "Muted accent background"]] },
+  { key: "typography", title: "Text and labels", subtitle: "Main text, secondary text, placeholders, and button text", colors: [["ink", "Primary text and headings"], ["muted", "Secondary text and metadata"], ["placeholder", "Placeholder text"], ["wineDark", "Dark accent and link text"], ["onAccent", "Text on primary buttons"]] },
+  { key: "accents", title: "Buttons and status colors", subtitle: "Accent, success, warning, and alert colors", colors: [["accent", "Primary accent and buttons"], ["green", "Success text and icons"], ["amber", "Warning text and icons"], ["red", "Alert text and icons"]] },
+  { key: "borders", title: "Borders and touch feedback", subtitle: "Card edges, separators, and pressed states", colors: [["line", "Borders and dividers"], ["softLine", "Subtle inner borders"], ["ripple", "Touch feedback and pressed state"]] },
 ];
 const CUSTOM_THEME_COLOR_KEYS = CUSTOM_THEME_COLOR_GROUPS.flatMap((group) => group.colors.map(([key]) => key));
-const customThemeFromColors = (colors, mode) => ({
-  mode,
-  paper: colors.paper, card: colors.card, line: colors.line, ink: colors.ink, muted: colors.muted,
-  accent: colors.wine, soft: colors.soft, softAlt: colors.softAlt, softLine: colors.softLine, ripple: colors.ripple,
-});
+const customThemeFromColors = (colors, mode) => ({ mode, ...Object.fromEntries(CUSTOM_THEME_COLOR_KEYS.map((key) => [key, key === "accent" ? colors.wine : colors[key]])) });
 const CUSTOM_COLOR_SWATCHES = ["#111111", "#FFFFFF", "#D7263D", "#F04455", "#FF7A45", "#E4A800", "#3A9B62", "#168B8D", "#3478D4", "#7552B8", "#D83E91", "#8B6E5A", "#808080", "#F2E8D8"];
 const makeThemeColors = (spec, dark = false) => {
   const redBlack = spec[0] === "Red and Black";
@@ -179,25 +179,10 @@ const makeThemeColors = (spec, dark = false) => {
 };
 const makeCustomThemeColors = (custom) => {
   const selected = { ...DEFAULT_CUSTOM_THEME, ...(custom || {}) };
-  const dark = selected.mode !== "light";
-  const base = makeThemeColors(THEME_SPECS[1], dark);
   const pick = (key) => validHexColor(selected[key]) ? selected[key] : DEFAULT_CUSTOM_THEME[key];
-  const paper = pick("paper");
-  const card = pick("card");
-  const accent = pick("accent");
-  const soft = pick("soft");
-  const softAlt = pick("softAlt");
   return {
-    ...base, paper, card, line: pick("line"), ink: pick("ink"), muted: pick("muted"), wine: accent,
-    wineDark: pick("ink"),
-    rose: softAlt,
-    lavender: soft,
-    soft,
-    softAlt,
-    softLine: pick("softLine"),
-    ripple: pick("ripple"),
-    onAccent: contrastText(accent), accentMuted: mixHex(accent, dark ? card : "#FFFFFF", 0.56),
-    accentSoft: mixHex(accent, dark ? paper : "#FFFFFF", 0.82),
+    wine: pick("accent"),
+    ...Object.fromEntries(CUSTOM_THEME_COLOR_KEYS.filter((key) => key !== "accent").map((key) => [key, pick(key)])),
   };
 };
 const THEMES = THEME_SPECS.flatMap((spec) => [
@@ -1400,9 +1385,16 @@ function ThemePreview({ theme }) {
   const swatches = [
     { label: "Page", color: theme.colors.paper }, { label: "Card", color: theme.colors.card },
     { label: "Soft", color: theme.colors.soft }, { label: "Alt row", color: theme.colors.softAlt },
-    { label: "Text", color: theme.colors.ink }, { label: "Muted", color: theme.colors.muted },
-    { label: "Accent", color: theme.colors.wine }, { label: "Ripple", color: theme.colors.ripple },
-    { label: "Border", color: theme.colors.line }, { label: "Subtle line", color: theme.colors.softLine },
+    { label: "Rose", color: theme.colors.rose }, { label: "Lavender", color: theme.colors.lavender },
+    { label: "Sage", color: theme.colors.sage }, { label: "Text", color: theme.colors.ink },
+    { label: "Muted text", color: theme.colors.muted }, { label: "Placeholder", color: theme.colors.placeholder },
+    { label: "Accent", color: theme.colors.wine }, { label: "Accent text", color: theme.colors.wineDark },
+    { label: "Button text", color: theme.colors.onAccent }, { label: "Success", color: theme.colors.green },
+    { label: "Warning", color: theme.colors.amber }, { label: "Warning fill", color: theme.colors.amberBg },
+    { label: "Alert", color: theme.colors.red }, { label: "Alert fill", color: theme.colors.redBg },
+    { label: "Soft accent", color: theme.colors.accentSoft }, { label: "Muted accent", color: theme.colors.accentMuted },
+    { label: "Border", color: theme.colors.line }, { label: "Inner border", color: theme.colors.softLine },
+    { label: "Ripple", color: theme.colors.ripple },
   ];
   return <View style={styles.themePreview}>
     <View style={styles.cardTop}>
@@ -1822,20 +1814,8 @@ function RecordModal({ visible, type, record, db, prefill, onClose, onSave, onMa
   const optionsFor = (key) => (db.dropdownOptions && db.dropdownOptions[key] || DEFAULT_DROPDOWN_OPTIONS[key] || []).map((value) => ({ label: value, value }));
   const supplierOptions = (db.suppliers || []).filter(active).map((item) => ({ label: item.name, value: item.name }));
   const currentOrderProductId = type === "order" && record && record.items && record.items[0] ? record.items[0].productId : "";
-  const currentListingProductId = type === "listing" ? (record && record.productId || prefill && prefill.productId || "") : "";
-  const [listingProductInventoryFilter, setListingProductInventoryFilter] = useState("inStock");
-  const [listingProductCategoryFilter, setListingProductCategoryFilter] = useState("All");
-  const selectableProducts = (db.products || []).filter((p) => active(p) || p.id === currentOrderProductId || p.id === currentListingProductId);
-  const productOptions = (db.products || []).filter((p) => active(p) || p.id === currentOrderProductId || p.id === currentListingProductId).map((p) => ({ label: p.name + " (" + p.sku + ") · " + (Math.max(0, Number(p.inventory) || 0)) + " available" + (p.archived ? " · archived" : ""), value: p.id }));
-  const listingProductCategories = Array.from(new Set(selectableProducts.map((product) => product.category || "Other"))).sort((a, b) => a.localeCompare(b));
-  const listingProductOptions = selectableProducts.filter((product) => {
-    if (product.id === currentListingProductId) return true;
-    if (listingProductCategoryFilter !== "All" && (product.category || "Other") !== listingProductCategoryFilter) return false;
-    const inventory = Math.max(0, Number(product.inventory) || 0);
-    if (listingProductInventoryFilter === "inStock") return inventory > 0;
-    if (listingProductInventoryFilter === "outOfStock") return inventory <= 0;
-    return true;
-  }).map((product) => ({ label: product.name + " (" + product.sku + ") · " + (Math.max(0, Number(product.inventory) || 0)) + " available" + (product.id === currentListingProductId && !(Number(product.inventory) > 0) ? " · currently linked" : "") + (product.archived ? " · archived" : ""), value: product.id }));
+  const productOptions = (db.products || []).filter((p) => active(p) || p.id === currentOrderProductId).map((p) => ({ label: p.name + " (" + p.sku + ") · " + (Math.max(0, Number(p.inventory) || 0)) + " available" + (p.archived ? " · archived" : ""), value: p.id }));
+  const listingProductOptions = (db.products || []).filter(active).map((product) => ({ label: product.name + " (" + product.sku + ")", value: product.id }));
   const orderOptions = (db.orders || []).map((order) => ({ label: [order.orderSku, (order.items || []).map((item) => [item.productName, item.productSku, item.listingName, item.listingSku].filter(Boolean).join(" ").trim()).join(", "), order.customer, dateLabel(order.date)].filter(Boolean).join(" · "), value: order.id }));
   const fieldsByType = {
     component: [
@@ -1878,7 +1858,7 @@ function RecordModal({ visible, type, record, db, prefill, onClose, onSave, onMa
       { key: "packageWeightUnit", label: "Package weight unit", options: WEIGHT_UNITS },
     ],
     listing: [
-      { key: "productId", label: "Product", options: listingProductOptions, searchable: true, searchPlaceholder: "Search products by name or SKU", emptyMessage: "No products match these filters. Try All active, change category, or add a product.", required: true, placeholder: "Choose a product" },
+      { key: "productId", label: "Product", options: listingProductOptions, searchable: true, searchPlaceholder: "Search active products by name or SKU", emptyMessage: "No active products found. Add or restore a product first.", required: true, placeholder: "Choose an active product", hint: "Only active products appear here. Creating, archiving, or deleting a listing does not change product or component inventory." },
       { key: "listingNameOverride", label: "Listing name (optional override)", placeholder: "Leave blank to use the product name", hint: "A custom title here applies only to this marketplace listing. Leave it blank to follow future product name changes." },
       { key: "listingSku", label: "Listing SKU", required: true, placeholder: "Example: LIST-001" },
       { key: "marketplaces", label: "Sales channels (choose all that apply)", optionSet: "marketplaces", options: optionsFor("marketplaces"), multiple: true, required: true, placeholder: "Choose one or more channels" },
@@ -2009,8 +1989,6 @@ function RecordModal({ visible, type, record, db, prefill, onClose, onSave, onMa
   useEffect(() => {
     const initial = JSON.parse(initialValuesJson);
     setValues({ ...createFormDefaults(initial.type, initial.record, initial.defaultLowStock, initial), ...(initial.prefill || {}) });
-    setListingProductInventoryFilter("inStock");
-    setListingProductCategoryFilter("All");
     setError("");
     setSubmitting(false);
     submitLock.current = false;
@@ -2069,12 +2047,6 @@ function RecordModal({ visible, type, record, db, prefill, onClose, onSave, onMa
         <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === "ios" ? "padding" : "height"}>
         <ScrollView contentContainerStyle={styles.formContent} keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag">
           <View style={styles.formHero}><Text style={styles.formHeroEyebrow}>{record ? "UPDATE YOUR RECORD" : "ADD SOMETHING NEW"}</Text><Text style={styles.formHeroTitle}>{record ? "Edit " : "Create "}{typeLabels[type] || "Record"}</Text><Text style={styles.formHeroText}>{FORM_INTRO[type] || "Add the details you want to keep with this record. You can come back and edit it anytime."}</Text></View>
-          {type === "listing" ? <View style={styles.formSection}>
-            <View style={styles.formSectionHeading}><View style={styles.formSectionMark} /><View style={styles.flex}><Text style={styles.formSectionTitle}>Find the product</Text><Text style={styles.formSectionText}>Filter the product picker by stock and category, then search by name or SKU.</Text></View></View>
-            <ChoiceChips label="Product stock" options={[{ label: "In stock", value: "inStock" }, { label: "All active", value: "all" }, { label: "Out of stock", value: "outOfStock" }]} value={listingProductInventoryFilter} onChange={setListingProductInventoryFilter} />
-            <ChoiceChips label="Product category" options={["All", ...listingProductCategories]} value={listingProductCategoryFilter} onChange={setListingProductCategoryFilter} />
-            {currentListingProductId ? <Text style={styles.fieldHint}>The currently linked product stays in the list even if it is out of stock or archived.</Text> : null}
-          </View> : null}
           {formSections.map((section) => <View key={section.title} style={styles.formSection}>
             <View style={styles.formSectionHeading}><View style={styles.formSectionMark} /><View style={styles.flex}><Text style={styles.formSectionTitle}>{section.title}</Text><Text style={styles.formSectionText}>{section.description}</Text></View></View>
           {section.fields.map((field) => (
@@ -2579,6 +2551,7 @@ export default function App() {
   const [backupRestoreComplete, setBackupRestoreComplete] = useState(false);
   const [customColorPicker, setCustomColorPicker] = useState("");
   const [customThemeSections, setCustomThemeSections] = useState({ surfaces: true, typography: false, accents: false, borders: false });
+  const [customPresetChoice, setCustomPresetChoice] = useState(DEFAULT_THEME_NAME);
   const [themePickerOpen, setThemePickerOpen] = useState(false);
   const [settingsSections, setSettingsSections] = useState({ profile: true, appearance: true, marketplaces: true, fees: false, widgets: false, options: false, data: false, archive: false, announcements: false });
   const [backupOpen, setBackupOpen] = useState(false);
@@ -2759,6 +2732,12 @@ export default function App() {
     const tick = setInterval(() => setClockNow(Date.now()), refreshMs);
     return () => clearInterval(tick);
   }, [screen, activeShiftId, activeTimerId]);
+
+  useEffect(() => {
+    if (db.themeName && db.themeName !== CUSTOM_THEME_NAME && THEMES.some((theme) => theme.name === db.themeName)) {
+      setCustomPresetChoice(db.themeName);
+    }
+  }, [db.themeName]);
 
   useEffect(() => {
     if (Platform.OS === "web" && typeof document !== "undefined") {
@@ -3102,8 +3081,8 @@ export default function App() {
       if (!component || quantity <= 0) { Alert.alert("Check this restock", "Choose a component and enter a quantity above zero."); return false; }
     }
     if (type === "listing") {
-      const selected = db.products.find((x) => x.id === values.productId);
-      if (!selected) { Alert.alert("Check this listing", "Choose an existing product for this listing."); return false; }
+      const selected = db.products.find((x) => x.id === values.productId && active(x));
+      if (!selected) { Alert.alert("Check this listing", "Choose an active product for this listing. Archived products cannot be linked to new or edited listings."); return false; }
       if (!Array.isArray(values.marketplaces) || values.marketplaces.length === 0) { Alert.alert("Choose sales channels", "Select at least one place where you sell this listing."); return false; }
       const listingSku = String(values.listingSku || "").trim().toLowerCase();
       if (!listingSku || db.listings.some((item) => item.id !== (record && record.id) && String(item.listingSku || "").trim().toLowerCase() === listingSku)) { Alert.alert("Choose a unique listing SKU", "Each marketplace listing needs its own SKU. Check the code and try again."); return false; }
@@ -4054,7 +4033,7 @@ export default function App() {
   };
   const saveCustomThemeColor = (key, value) => {
     let customTheme = { ...DEFAULT_CUSTOM_THEME, ...(db.customTheme || {}), [key]: value };
-    if (key === "mode") {
+    if (key === "mode" && value !== ((db.customTheme || DEFAULT_CUSTOM_THEME).mode || "dark")) {
       // Changing the base mode also resets the surface/text defaults so a dark
       // palette cannot accidentally leave white text on a white background.
       const base = makeThemeColors(DEFAULT_THEME_SPEC, value === "dark");
@@ -4063,11 +4042,10 @@ export default function App() {
     setThemeColors(CUSTOM_THEME_NAME, customTheme);
     setData((old) => ({ ...old, themeName: CUSTOM_THEME_NAME, customTheme: { ...DEFAULT_CUSTOM_THEME, ...(old.customTheme || {}), ...customTheme } }));
   };
-  const applyCustomPreset = (specIndex, mode) => {
-    const spec = THEME_SPECS[specIndex];
-    if (!spec) return;
-    const colors = makeThemeColors(spec, mode === "dark");
-    const customTheme = customThemeFromColors({ ...colors, wine: mode === "dark" && spec[0] === "Red and Black" ? "#E53935" : spec[1] }, mode);
+  const applyCustomPreset = (themeName) => {
+    const preset = THEMES.find((theme) => theme.name === themeName && theme.name !== CUSTOM_THEME_NAME);
+    if (!preset) return;
+    const customTheme = customThemeFromColors(preset.colors, preset.mode);
     setThemeColors(CUSTOM_THEME_NAME, customTheme);
     setData((old) => ({ ...old, themeName: CUSTOM_THEME_NAME, customTheme }));
   };
@@ -5961,19 +5939,14 @@ export default function App() {
       </SettingsAccordion>
       </SettingsAccordion>
       <SettingsAccordion title="Theme and colors" subtitle="Choose a palette for every page or customize each color" expanded={settingsSections.appearance} onPress={() => toggleSection("appearance")}>
-        <Text style={styles.fieldLabel}>Current app theme · 50 light and 50 dark palettes</Text>
+        <Text style={styles.fieldLabel}>Current app theme · {THEME_SPECS.length} light and {THEME_SPECS.length} dark palettes</Text>
         <Pressable onPress={() => setThemePickerOpen(true)} style={styles.themePickerButton}><View style={styles.flex}><Text style={styles.recordTitle}>{db.themeName || DEFAULT_THEME_NAME}</Text><Text style={styles.recordMeta}>Preview palette colors before choosing. Applies throughout the app.</Text></View><Text style={styles.actionText}>Choose ›</Text></Pressable>
         <ThemePreview theme={selectedTheme} />
         <Card>
           <Text style={styles.cardTitle}>Customize your current palette</Text>
-          <Text style={styles.bodyText}>Custom starts from your current theme. Switch to Custom to keep the palette you chose, then adjust any color below. Your accent color is included here.</Text>
-          <Text style={styles.fieldLabel}>Start with a color set</Text>
-          <View style={styles.actionRow}>
-            <Action label="Stone & blue · Light" quiet onPress={() => applyCustomPreset(THEME_SPECS.findIndex((spec) => spec[0] === "Stone and Blue"), "light")} />
-            <Action label="Pink & white · Light" quiet onPress={() => applyCustomPreset(0, "light")} />
-            <Action label="Red & black · Dark" quiet onPress={() => applyCustomPreset(1, "dark")} />
-            <Action label="Blue & white · Light" quiet onPress={() => applyCustomPreset(16, "light")} />
-          </View>
+          <Text style={styles.bodyText}>Custom includes the same 23 color roles used by the app palettes. Pick any existing light or dark palette as a starting point, then adjust each color separately.</Text>
+          <Field field={{ key: "customPresetChoice", label: "Start from any palette", options: THEMES.filter((theme) => theme.name !== CUSTOM_THEME_NAME).map((theme) => ({ label: theme.name, value: theme.name })), searchable: true, searchPlaceholder: "Search all light and dark palettes", placeholder: "Choose a starting palette", hint: "Includes every built-in palette in both Light Mode and Dark Mode." }} value={customPresetChoice} onChange={setCustomPresetChoice} />
+          <View style={styles.actionRow}><Action label="Load palette into Custom" onPress={() => applyCustomPreset(customPresetChoice)} /></View>
           <Field field={{ key: "mode", label: "Custom appearance", explanation: "Choose a light or dark base. Switching modes resets surface, text, border, and touch-feedback colors to matching defaults while keeping your accent color.", options: [{ label: "Dark Mode", value: "dark" }, { label: "Light Mode", value: "light" }] }} value={(db.customTheme || DEFAULT_CUSTOM_THEME).mode || "dark"} onChange={(value) => saveCustomThemeColor("mode", value)} />
           {CUSTOM_THEME_COLOR_GROUPS.map((group) => <SettingsAccordion key={group.key} title={group.title} subtitle={group.subtitle} expanded={!!customThemeSections[group.key]} onPress={() => toggleCustomThemeSection(group.key)}>
             {group.colors.map(([key, label]) => <CustomColorSetting key={key} label={label} value={String((db.customTheme || DEFAULT_CUSTOM_THEME)[key] || DEFAULT_CUSTOM_THEME[key])} isOpen={customColorPicker === key} onToggle={() => setCustomColorPicker(customColorPicker === key ? "" : key)} onChange={(value) => saveCustomThemeColor(key, value)} onPick={(value) => saveCustomThemeColor(key, value)} />)}
