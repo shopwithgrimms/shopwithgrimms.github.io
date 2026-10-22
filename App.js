@@ -268,6 +268,7 @@ const PAGE_ICON_NAMES = {
   Reviews: "reviews",
   Finances: "finances",
   Calendar: "calendar",
+  Time: "time",
   Ideas: "ideas",
   Notes: "notes",
   Audit: "audit",
@@ -301,6 +302,7 @@ const ICON_PATHS = {
   reviews: ["m12 3 2.7 5.5 6.1.9-4.4 4.3 1 6.1-5.4-2.9-5.4 2.9 1-6.1-4.4-4.3 6.1-.9L12 3Z"],
   finances: ["M12 2v20", "M17 6H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"],
   calendar: ["M4 5h16v16H4z", "M8 3v4", "M16 3v4", "M4 9h16", "M8 13h2", "M14 13h2", "M8 17h2"],
+  time: ["M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18Z", "M12 7v5l3 2"],
   notes: ["M7 3h8l4 4v14H7z", "M15 3v5h4", "M10 12h6", "M10 16h6"],
   pin: ["M16 4l4 4", "M14 6l4 4", "M8 12l4 4", "m6 18 5-5", "M16 4l-3 7 3 3 7-3"],
   ideas: ["M9 18h6", "M10 22h4", "M8.2 14.5a7 7 0 1 1 7.6 0c-.9.6-1.3 1.2-1.4 2.5h-4.8c-.1-1.3-.5-1.9-1.4-2.5Z"],
@@ -315,7 +317,7 @@ const ICON_PATHS = {
 };
 const ICON_FALLBACKS = {
   dashboard: "▦", components: "⬡", products: "□", listings: "▤", analytics: "⌁", orders: "▣",
-  production: "⚒", reviews: "☆", finances: "$", calendar: "▦", ideas: "✧", notes: "▤", pin: "📌", audit: "✓",
+  production: "⚒", reviews: "☆", finances: "$", calendar: "▦", time: "◷", ideas: "✧", notes: "▤", pin: "📌", audit: "✓",
   suppliers: "↗", help: "?", settings: "⚙", mail: "✉", menu: "☰", plus: "+", search: "⌕",
 };
 function AppIcon({ name, size = 18, color = COLORS.muted, strokeWidth = 1.8 }) {
@@ -450,6 +452,7 @@ const MORE_ITEMS = [
   ["Reviews", "RV", "Save buyer comments and shop ratings"],
   ["Finances", "FN", "Sales, costs, and expenses"],
   ["Calendar", "CL", "Tasks, events, shifts, and business dates"],
+  ["Time", "TM", "Clock shifts, breaks, and plan work"],
   ["Ideas", "ID", "Product ideas and work stages"],
   ["Notes", "NT", "Research, plans, diary entries, and business notes"],
   ["Audit", "AU", "Review saved changes and inventory history"],
@@ -461,7 +464,7 @@ const MORE_ITEMS = [
 const SIDEBAR_GROUPS = [
   { label: "WORKSPACE", pages: ["Dashboard", "Components", "Products", "Notes"] },
   { label: "SALES", pages: ["Listings", "Listing Analytics", "Orders", "Reviews"] },
-  { label: "OPERATIONS", pages: ["Production", "Finances", "Calendar", "Ideas", "Audit", "Suppliers"] },
+  { label: "OPERATIONS", pages: ["Production", "Finances", "Calendar", "Time", "Ideas", "Audit", "Suppliers"] },
   { label: "SUPPORT", pages: ["Help & FAQ"] },
 ];
 
@@ -2495,6 +2498,7 @@ export default function App() {
   const [helpOpen, setHelpOpen] = useState(false);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [announcementOpen, setAnnouncementOpen] = useState(false);
+  const [attentionOpen, setAttentionOpen] = useState(false);
   const [helpSearch, setHelpSearch] = useState("");
   const [helpExpandedFaq, setHelpExpandedFaq] = useState(0);
   const [helpExpandedGuide, setHelpExpandedGuide] = useState("");
@@ -2823,6 +2827,19 @@ export default function App() {
     ...db.orders.map((order) => order.status),
   ].filter(Boolean))).sort((a, b) => a.localeCompare(b)), [fulfillmentStatuses, db.orders]);
   const orderNeedsAttention = useMemo(() => db.orders.filter((order) => !order.archived && !order.refundedAt && order.status !== "Fulfilled" && order.status !== "Complete"), [db.orders]);
+  const attentionInboxItems = useMemo(() => [
+    ...lowStock.map((item) => ({ id: "component:" + item.id, recordId: item.id, searchTerm: item.name, icon: "◈", title: item.name + " is low", detail: "Only " + item.quantity + " " + (item.unit || "pieces") + " on hand · alert at " + item.lowStock, screen: "Components" })),
+    ...orderNeedsAttention.map((item) => ({ id: "order:" + item.id, recordId: item.id, searchTerm: item.orderSku || "", icon: "▣", title: (item.orderSku || "Sale") + " needs attention", detail: (item.items || []).map((line) => line.productName + " × " + line.quantity).join(", ") + " · " + (item.status || "Status not set") + " · " + dateLabel(item.date), screen: "Orders" })),
+    ...overdueTasks.map((item) => ({ id: "task:" + item.id, recordId: item.id, searchTerm: item.title, date: item.dueDate, icon: "✓", title: "Overdue: " + item.title, detail: (item.category || "Task") + " · Due " + dateLabel(item.dueDate) + (item.notes ? " · " + item.notes : ""), screen: "Calendar" })),
+    ...db.listings.filter((item) => active(item) && item.needsArchive).map((item) => ({ id: "listing:" + item.id, recordId: item.id, searchTerm: item.productName || "", icon: "▤", title: (item.productName || "Listing") + " sold out", detail: (item.listingSku || "Listing SKU") + " · archive the listing or relist after making more stock", screen: "Listings" })),
+    ...db.listings.filter((listing) => {
+      if (!active(listing)) return false;
+      const product = db.products.find((item) => item.id === listing.productId);
+      if (!product) return false;
+      const source = listing.descriptionSource || "product";
+      return source === "product" && String(listing.productDescriptionSnapshot == null ? listing.description || "" : listing.productDescriptionSnapshot).trim() !== String(product.description || "").trim() && String(listing.description || "").trim() !== String(product.description || "").trim();
+    }).map((listing) => ({ id: "listing-description:" + listing.id, recordId: listing.id, searchTerm: listing.productName || "", icon: "▤", title: "Product description changed · " + listing.productName, detail: "Review the marketplace description and copy the latest product text if you want it to match.", screen: "Listings" })),
+  ], [lowStock, orderNeedsAttention, overdueTasks, db.listings, db.products]);
   const visibleProducts = useMemo(() => db.products.filter(active), [db.products]);
   const pageRows = (key, rows) => rows.slice(0, recordPageLimits[key] || RECORD_PAGE_SIZE);
   const showMoreRows = (key) => setRecordPageLimits((old) => ({ ...old, [key]: (old[key] || RECORD_PAGE_SIZE) + RECORD_PAGE_SIZE }));
@@ -4814,6 +4831,21 @@ export default function App() {
         }),
       };
     });
+    const copyProductNameToListing = (item) => setData((old) => {
+      const product = old.products.find((row) => row.id === item.productId);
+      if (!product) return old;
+      const timestamp = new Date().toISOString();
+      return {
+        ...old,
+        listings: old.listings.map((listing) => {
+          if (listing.id !== item.id) return listing;
+          const changes = [];
+          if (String(listing.productName || "") !== String(product.name || "")) changes.push({ field: "listing name", from: listing.productName || "", to: product.name || "" });
+          if (String(listing.listingNameOverride || "").trim()) changes.push({ field: "listing name mode", from: "Custom listing name", to: "Product name" });
+          return { ...listing, productName: product.name, listingNameOverride: "", productSku: product.sku, updatedAt: timestamp, auditLog: changes.length ? (listing.auditLog || []).concat([{ id: uid("audit"), action: "Product name copied to listing", date: timestamp, changes }]) : listing.auditLog || [] };
+        }),
+      };
+    });
     return (
       <>
         <View style={styles.infoBanner}><Text style={styles.infoBannerTitle}>Listings, promotion plans, and relists</Text><Text style={styles.infoBannerText}>Search and filter your marketplace listings. Sold-out products are flagged here so you can archive a listing or relist it after making more stock. Archiving a listing hides only that marketplace offer and never returns materials. Sold units stay consumed; archiving a product returns materials only for finished units still in stock.</Text><View style={styles.actionRow}><Action label="＋ Add listing" onPress={() => beginAdd("listing")} /><Action label="Bulk edit names & descriptions" quiet onPress={() => setBulkEditType("listing")} /><Action label="Listing analytics" quiet onPress={() => navigateToScreen("Listing Analytics")} /></View></View>
@@ -4843,7 +4875,7 @@ export default function App() {
         </> : null}
         <View style={styles.sectionHeadingRow}><Text style={styles.sectionTitle}>{showArchivedListings ? "Archived listings" : "Your marketplace listings"}</Text></View>
         {pagedListings.length ? pagedListings.map((item) => (
-          <Card key={item.id}><View style={styles.cardTop}><View style={styles.flex}><Text style={styles.recordTitle}>{item.productName}</Text>{item.listingNameOverride ? <Text style={styles.recordMeta}>Custom listing name · product name changes will not rename this listing</Text> : <Text style={styles.recordMeta}>Following product name</Text>}<Text style={styles.recordMeta}>{item.listingSku || "LIST SKU missing"} · Product {item.productSku || "SKU not saved"}</Text><Text style={styles.recordMeta}>{item.marketplace || "Marketplace not saved"} · {item.price != null ? money(item.price, db.currency) : "Price not saved"} · {listingAgeText(item)}</Text>{item.description ? <Text numberOfLines={2} style={styles.bodyText}>{item.description}</Text> : null}{listingDescriptionNeedsUpdate(item) ? <Text style={styles.errorText}>Product description changed. Update the marketplace copy when ready.</Text> : productDescriptionDiffers(item) ? <Text style={styles.fieldHint}>Marketplace and product descriptions differ. Review before copying.</Text> : null}{(() => { const plans = item.discountPlans || []; const activePlan = plans.filter((plan) => plan.startDate <= TODAY && (!plan.endDate || plan.endDate >= TODAY)).sort((a, b) => b.startDate.localeCompare(a.startDate))[0]; const price = Math.max(0, asNumber(item.price, 0)) * (activePlan ? 1 - Number(activePlan.percent) / 100 : 1); const estimates = payoutEstimatesForListing(item, price); return estimates.some((estimate) => estimate.configured) ? <Text numberOfLines={2} style={styles.recordMeta}>Est. after fees: {estimates.map((estimate) => estimate.channel + " " + money(estimate.payout, db.currency)).join(" · ")}</Text> : null; })()}</View><View style={{ alignItems: "flex-end", gap: 6 }}><Pill text={item.archived ? "Archived" : item.needsArchive ? "Sold · archive this listing" : item.status === "Paused" ? "Paused" : item.startDate && item.startDate > TODAY ? "Planned" : item.status || "Draft"} tone={item.needsArchive ? "red" : item.archived ? "neutral" : item.status === "Active" ? "green" : "amber"} /><Action label="Duplicate" quiet onPress={() => duplicateRecord("listing", item)} /><Action label="Edit" quiet onPress={() => editListing(item)} /><Action label={listingDescriptionNeedsUpdate(item) ? "Update description from product" : "Copy product description"} quiet onPress={() => copyProductDescriptionToListing(item)} /></View></View>
+          <Card key={item.id}><View style={styles.cardTop}><View style={styles.flex}><Text style={styles.recordTitle}>{item.productName}</Text>{item.listingNameOverride ? <Text style={styles.recordMeta}>Custom listing title</Text> : null}<Text style={styles.recordMeta}>{item.listingSku || "LIST SKU missing"} · {item.productSku || "Product SKU missing"}</Text><Text style={styles.recordMeta}>{item.marketplace || "Marketplace not saved"} · {item.price != null ? money(item.price, db.currency) : "Price not saved"}</Text>{listingDescriptionNeedsUpdate(item) ? <Text style={styles.errorText}>Product description changed · review details</Text> : null}</View><View style={{ alignItems: "flex-end", gap: 6 }}><Pill text={item.archived ? "Archived" : item.needsArchive ? "Sold · archive this listing" : item.status === "Paused" ? "Paused" : item.startDate && item.startDate > TODAY ? "Planned" : item.status || "Draft"} tone={item.needsArchive ? "red" : item.archived ? "neutral" : item.status === "Active" ? "green" : "amber"} /><Action label="Edit" quiet onPress={() => editListing(item)} /></View></View>
             <View style={styles.actionRow}><Action label={expandedListingIds.includes(item.id) ? "Hide details" : "Show details"} quiet onPress={() => setExpandedListingIds((old) => old.includes(item.id) ? [] : [item.id])} /></View>
             {expandedListingIds.includes(item.id) ? <>
             {(() => {
@@ -4855,7 +4887,7 @@ export default function App() {
               const payoutEstimates = payoutEstimatesForListing(item, currentPrice);
               const hasFeeEstimate = payoutEstimates.some((estimate) => estimate.configured);
               return <>
-                <View style={styles.recipePreview}><Text style={styles.fieldLabel}>Linked product and materials</Text>{product ? <><Text style={styles.bodyText}>{product.name} · {product.sku} · {Number(product.inventory) || 0} finished units in stock · {(product.recipe || []).length} component types in recipe</Text>{(product.recipe || []).map((part) => { const component = db.components.find((row) => row.id === part.componentId); return <Text key={part.componentId} style={styles.fieldHint}>{part.name}: {part.quantity} {part.unit || component && component.unit || "units"} per product · {component ? component.quantity + " available" : "component missing"}</Text>; })}<View style={styles.actionRow}><Action label="Open product catalog" quiet onPress={() => navigateToScreen("Products")} />{product.archived ? <Action label="Restore product and materials" onPress={() => restoreRecord("products", product)} /> : <Action label={Number(product.inventory) > 0 ? "Archive product · return materials for unsold stock" : "Archive product · no materials to return"} onPress={() => archiveRecord("products", product, "product")} />}</View><Text style={styles.fieldHint}>Archiving this listing alone never returns materials. Product archiving returns materials only for finished units still in stock; sold units stay consumed.</Text></> : <Text style={styles.bodyText}>The linked product is missing. Check the product catalog and this listing’s saved link.</Text>}</View>
+                <View style={styles.recipePreview}><Text style={styles.fieldLabel}>Linked product and materials</Text>{product ? <><Text style={styles.bodyText}>{product.name} · {product.sku} · {Number(product.inventory) || 0} finished units in stock · {(product.recipe || []).length} component types in recipe</Text>{(product.recipe || []).map((part) => { const component = db.components.find((row) => row.id === part.componentId); return <Text key={part.componentId} style={styles.fieldHint}>{part.name}: {part.quantity} {part.unit || component && component.unit || "units"} per product · {component ? component.quantity + " available" : "component missing"}</Text>; })}<View style={styles.actionRow}><Action label="Open product catalog" quiet onPress={() => navigateToScreen("Products")} /><Action label="Copy product name" quiet onPress={() => copyProductNameToListing(item)} />{product.archived ? <Action label="Restore product and materials" onPress={() => restoreRecord("products", product)} /> : <Action label={Number(product.inventory) > 0 ? "Archive product · return materials for unsold stock" : "Archive product · no materials to return"} onPress={() => archiveRecord("products", product, "product")} />}</View><Text style={styles.fieldHint}>Archiving this listing alone never returns materials. Product archiving returns materials only for finished units still in stock; sold units stay consumed.</Text></> : <Text style={styles.bodyText}>The linked product is missing. Check the product catalog and this listing’s saved link.</Text>}</View>
                 <View style={styles.recipePreview}><Text style={styles.fieldLabel}>Marketplace description</Text>{item.description ? <Text style={styles.bodyText}>{item.description}</Text> : <Text style={styles.fieldHint}>No marketplace description saved yet.</Text>}{item.descriptionSource === "product" ? <Text style={listingDescriptionNeedsUpdate(item) ? styles.errorText : styles.fieldHint}>{listingDescriptionNeedsUpdate(item) ? "The product description changed since this copy was made." : "Copied from the linked product."}</Text> : productDescriptionDiffers(item) ? <Text style={styles.fieldHint}>This listing keeps its own marketplace description. The linked product text is different.</Text> : <Text style={styles.fieldHint}>This listing description currently matches the linked product.</Text>}<View style={styles.actionRow}><Action label={item.description ? "Edit description" : "Add description"} quiet onPress={() => editListing(item)} /><Action label={listingDescriptionNeedsUpdate(item) ? "Update from product" : "Copy product description"} onPress={() => copyProductDescriptionToListing(item)} /></View></View>
                 <View style={styles.channelChipRow}>{channels.map((channel) => <View key={channel} style={styles.channelChip}><Text style={styles.channelChipText}>{channel}</Text></View>)}</View>
                 <View style={styles.detailRow}><Text style={styles.detailText}>List price {money(item.price, db.currency)}</Text><Pill text={currentPlan ? `${currentPlan.percent}% off now` : `${discountPlans.length} discount plan${discountPlans.length === 1 ? "" : "s"}`} tone={currentPlan ? "green" : "neutral"} /></View>
@@ -4877,7 +4909,7 @@ export default function App() {
                 })}</View> : null}
               </>;
             })()}
-             <View style={styles.actionRow}>{!item.archived ? <><Action label="＋ Add discount plan" onPress={() => openDiscountEditor(item, null)} /><Action label="Plan relist" quiet onPress={() => editListing(item)} />{item.needsArchive ? <>{Number((db.products.find((product) => product.id === item.productId) || {}).inventory) > 0 ? <Action label="Relist now" onPress={() => setRelistEditor(item)} /> : <Action label="Make more first" quiet onPress={() => { const product = db.products.find((entry) => entry.id === item.productId); if (product) { setProductionProduct(product.id); navigateToScreen("Production"); } }} />}<Action label="Archive sold listing" onPress={() => archiveRecord("listings", item, "listing")} /></> : null}{!item.needsArchive ? <Action label="Archive" quiet onPress={() => archiveRecord("listings", item, "listing")} /> : null}<Action label="Delete" quiet onPress={() => permanentlyDeleteRecord("listings", item, "listing")} /></> : <Action label="Restore listing" onPress={() => restoreRecord("listings", item)} />}</View>
+             <View style={styles.actionRow}>{!item.archived ? <><Action label="＋ Add discount plan" onPress={() => openDiscountEditor(item, null)} /><Action label="Plan relist" quiet onPress={() => editListing(item)} />{item.needsArchive ? <>{Number((db.products.find((product) => product.id === item.productId) || {}).inventory) > 0 ? <Action label="Relist now" onPress={() => setRelistEditor(item)} /> : <Action label="Make more first" quiet onPress={() => { const product = db.products.find((entry) => entry.id === item.productId); if (product) { setProductionProduct(product.id); navigateToScreen("Production"); } }} />}<Action label="Archive sold listing" onPress={() => archiveRecord("listings", item, "listing")} /></> : null}{!item.needsArchive ? <Action label="Archive" quiet onPress={() => archiveRecord("listings", item, "listing")} /> : null}<Action label="Duplicate" quiet onPress={() => duplicateRecord("listing", item)} /><Action label="Delete" quiet onPress={() => permanentlyDeleteRecord("listings", item, "listing")} /></> : <Action label="Restore listing" onPress={() => restoreRecord("listings", item)} />}</View>
             </> : null}
           </Card>
         )) : <EmptyState title={showArchivedListings ? "No archived listings" : "No listings match this filter"} body="Change the status or search, or add a new listing." action={showArchivedListings ? undefined : "Create a listing"} onPress={showArchivedListings ? undefined : () => beginAdd("listing")} />}
@@ -5441,6 +5473,7 @@ export default function App() {
       const itemActions = ["Work shift", "Break"].includes(item.itemType) ? <>
         {item.itemType === "Work shift" ? <Action label="Edit shift" quiet onPress={() => openTimeEditor(item.isActiveShift ? "active" : "session", item)} /> : null}
         <Action label="Open time tracking" quiet onPress={() => navigateToScreen("Time")} />
+        {item.itemType === "Work shift" ? <Action label="Delete shift" quiet onPress={() => item.isActiveShift ? discardActiveShift() : deleteShiftSession(item)} /> : null}
       </> : isOrderUpdate ? <>
         <Action label="Change status" quiet onPress={() => openOrder(item)} />
         <Action label="Edit update" quiet onPress={() => setTimelineEditor({ orderId: item.orderId, index: item.timelineIndex, date: item.due, status: item.progressStatus })} />
@@ -6020,6 +6053,7 @@ export default function App() {
       case "Notes": return renderNotes();
       case "Finances": return renderFinances();
       case "Calendar": return renderCalendar();
+      case "Time": return renderTime();
       case "Audit": return renderAudit();
       case "Suppliers": return renderSuppliers();
       case "Help & FAQ": return renderHelpPage();
@@ -6028,7 +6062,7 @@ export default function App() {
     }
   };
 
-  const screenTitle = isFulfillmentPage ? fulfillmentPageTitle : screen === "More" ? "All pages" : screen;
+  const screenTitle = isFulfillmentPage ? fulfillmentPageTitle : screen === "More" ? "All pages" : screen === "Time" ? "Time tracking" : screen;
   const renderSettingsShortcut = () => {
     const selected = screen === "Settings";
     return <Pressable accessibilityRole="button" accessibilityLabel="Settings" onPress={() => { navigateRoot("Settings"); setSearch(""); setMobileNavOpen(false); }} style={[styles.sidebarLink, styles.sidebarSettingsLink, selected && styles.sidebarLinkSelected]}>
@@ -6094,9 +6128,13 @@ export default function App() {
       {screen !== "More" && screen !== "Dashboard" && screen !== "Settings" && screen !== "Help & FAQ" && (
         <View style={styles.searchWrap}><AppIcon name="search" size={17} color={COLORS.muted} /><TextInput value={search} onChangeText={setSearch} placeholder={screen === "Notes" ? "Search notes, plans, diary entries, tags…" : "Search " + (isFulfillmentPage ? "products" : screen.toLowerCase())} placeholderTextColor={COLORS.placeholder} style={styles.searchInput} returnKeyType="search" /><Pressable onPress={() => setSearch("")}><Text style={styles.searchClear}>×</Text></Pressable></View>
       )}
-      <View style={styles.screenHeading}><View style={styles.flex}><Text style={styles.screenTitle}>{screenTitle}</Text>{screen !== "Dashboard" ? <Text style={styles.screenSubtitle}>{isFulfillmentPage ? "Products in this fulfillment status" : screen === "Production" ? "Turn materials into finished inventory" : screen === "Ideas" ? "Save and move product ideas through your work" : screen === "Notes" ? "Research, plans, diary entries, and business notes" : screen === "Listing Analytics" ? "Record marketplace stats and review performance" : screen === "Help & FAQ" ? "Instructions and answers for your business tools" : "A clear view of your handmade business"}</Text> : <Text style={styles.screenSubtitle}>Your handmade business, in one place</Text>}</View>
+      <View style={styles.screenHeading}><View style={styles.flex}><Text style={styles.screenTitle}>{screenTitle}</Text>{screen !== "Dashboard" ? <Text style={styles.screenSubtitle}>{isFulfillmentPage ? "Products in this fulfillment status" : screen === "Production" ? "Turn materials into finished inventory" : screen === "Time" ? "Clock shifts, connect tasks and projects, and review your hours" : screen === "Ideas" ? "Save and move product ideas through your work" : screen === "Notes" ? "Research, plans, diary entries, and business notes" : screen === "Listing Analytics" ? "Record marketplace stats and review performance" : screen === "Help & FAQ" ? "Instructions and answers for your business tools" : "A clear view of your handmade business"}</Text> : <Text style={styles.screenSubtitle}>Your handmade business, in one place</Text>}</View>
         <View style={styles.headerActions}>
           {navigationStack.length > 1 ? <Pressable accessibilityRole="button" accessibilityLabel="Go back" style={styles.headerAdd} onPress={navigateBack}><Text style={styles.headerAddText}>‹ Back</Text></Pressable> : null}
+          <Pressable accessibilityRole="button" accessibilityLabel={"Needs attention" + (attentionInboxItems.length ? ", " + attentionInboxItems.length + " items" : ", all clear")} style={[styles.mailboxButton, { width: "auto", height: 34, flexDirection: "row", gap: 5, paddingHorizontal: 8 }]} onPress={() => setAttentionOpen(true)}>
+            <AppIcon name="mail" size={15} color={attentionInboxItems.length ? COLORS.red : COLORS.muted} />
+            <Text style={{ color: attentionInboxItems.length ? COLORS.red : COLORS.muted, fontSize: 10, fontWeight: "700" }}>Attention · {attentionInboxItems.length}</Text>
+          </Pressable>
           <Pressable accessibilityLabel={screenTitle + " help"} style={styles.helpButton} onPress={() => setHelpOpen(true)}><AppIcon name="help" size={17} color={COLORS.wine} /></Pressable>
         </View>
       </View>
@@ -6117,6 +6155,35 @@ export default function App() {
             <View style={styles.mobileNavHeader}><View><Text style={styles.mobileNavTitle}>All pages</Text><Text style={styles.mobileNavSubtitle}>Choose a workspace area</Text></View><Pressable accessibilityRole="button" onPress={() => setMobileNavOpen(false)}><Text style={styles.modalCancel}>Close</Text></Pressable></View>
             <ScrollView contentContainerStyle={styles.sidebarContent}>{renderNavigationLinks()}</ScrollView>
             <View style={styles.sidebarFooter}>{renderSettingsShortcut()}</View>
+          </SafeAreaView>
+        </View>
+      </Modal>
+      <Modal visible={attentionOpen} transparent animationType="fade" onRequestClose={() => setAttentionOpen(false)}>
+        <View style={styles.announcementOverlay}>
+          <Pressable style={styles.announcementScrim} onPress={() => setAttentionOpen(false)} accessibilityLabel="Close needs attention" />
+          <SafeAreaView style={styles.announcementPanel}>
+            <View style={styles.announcementHeader}>
+              <View style={styles.flex}>
+                <Text style={styles.announcementTitle}>Needs attention</Text>
+                <Text style={styles.announcementSubtitle}>{attentionInboxItems.length ? attentionInboxItems.length + " item" + (attentionInboxItems.length === 1 ? "" : "s") + " to review" : "Everything is up to date"}</Text>
+              </View>
+              <Pressable accessibilityRole="button" onPress={() => setAttentionOpen(false)} style={styles.announcementClose}><Text style={styles.modalCancel}>Close</Text></Pressable>
+            </View>
+            <ScrollView style={styles.announcementList} contentContainerStyle={styles.announcementListContent}>
+              {attentionInboxItems.length ? attentionInboxItems.map((item) => <View key={item.id} style={styles.announcementMessage}>
+                <View style={styles.announcementMessageTop}><Text style={styles.announcementMessageTitle}>{item.title}</Text><Text style={styles.announcementReadLabel}>{item.screen}</Text></View>
+                <Text style={styles.bodyText}>{item.detail}</Text>
+                <View style={styles.announcementMessageActions}><Pressable accessibilityRole="button" onPress={() => {
+                  setAttentionOpen(false);
+                  setSearch(item.searchTerm || "");
+                  if (item.screen === "Listings") { setShowArchivedListings(false); setExpandedListingIds(item.recordId ? [item.recordId] : []); }
+                  if (item.screen === "Components") setShowArchivedComponents(false);
+                  if (item.date) { const date = new Date(item.date + "T12:00:00"); setCalendarMonth(new Date(date.getFullYear(), date.getMonth(), 1)); setSelectedDay(item.date); }
+                  navigateRoot(item.screen);
+                }} style={styles.announcementReadAction}><Text style={styles.announcementMarkAllText}>Open {item.screen}</Text></Pressable></View>
+              </View>) : <Text style={styles.bodyText}>There are no low-stock materials, overdue tasks, open orders, sold-out listings, or changed product descriptions to review right now.</Text>}
+            </ScrollView>
+            <Text style={styles.announcementFootnote}>Open an item to go straight to the page where you can review and fix it.</Text>
           </SafeAreaView>
         </View>
       </Modal>
