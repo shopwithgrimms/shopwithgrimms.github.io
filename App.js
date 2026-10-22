@@ -2203,7 +2203,7 @@ const FAQ_ITEMS = [
   { question: "Where can I save notes for my business?", answer: "Open Notes from the left navigation. Add as many dated notes as you need, organize them with categories and tags, search their text, and pin important ones. Notes are included in the normal tracker backup.", tags: "notes diary research plans pin category organize backup" },
   { question: "Where is my information saved?", answer: "The tracker saves automatically in this browser on this device. It does not currently create an online account or sync records between browsers. A private window, browser reset, or different device may not have the same records.", tags: "data storage device browser account login sync" },
   { question: "How do I make a backup I can paste later?", answer: "Open Settings → Data and backups → Export backup. The app shows your backup as text. Choose Copy backup text and keep the copied text somewhere private that you can find again. You can also select and copy all the text in the box.", tags: "backup export copy text save paste" },
-  { question: "How do I restore a text backup?", answer: "Open Settings → Data and backups → Restore backup, paste the complete backup text, and choose Restore. Review the confirmation first. The app saves a local recovery copy of the current tracker before replacing it.", tags: "restore import paste backup recovery" },
+  { question: "How do I move a text backup to another device?", answer: "On the destination device, open Settings → Data and backups → Import backup text. Paste the complete text you copied from the other device, choose Check backup, review it, and then choose Restore backup. The current tracker on the destination device is saved as a recovery copy first. This moves a copy of the data; the devices do not sync afterward.", tags: "restore import paste backup recovery another device transfer move" },
   { question: "Can I sign in and see the same data on another computer?", answer: "Not yet. A real sign-in needs a secure account and database service; GitHub Pages only hosts the website. Until cloud sync is connected, use the copyable backup text to move a copy between devices. Never put passwords or private records in the public code repository.", tags: "login sign in cloud sync another device account" },
   { question: "How do I add or change a supplier?", answer: "Open Components and add or edit a component or restock. Open its Supplier dropdown to choose a saved supplier, edit a supplier name, add one, or remove it from the choices. You can also manage contact details and notes on the Suppliers page.", tags: "supplier dropdown add edit delete components" },
   { question: "Can I enter the original date I bought supplies?", answer: "Yes. From Components, choose Restock and use Purchase date to select the actual date of that purchase. It can be an earlier date; it does not have to be today. The purchase history keeps that date.", tags: "purchase date restock bought earlier date" },
@@ -4431,6 +4431,26 @@ export default function App() {
       Alert.alert("Copy the backup text", "Click inside the backup box, select all text, then copy it. Keep the text somewhere private.");
     } catch (_error) {
       Alert.alert("Could not copy automatically", "Click inside the backup box, select all text, then copy it. Keep the text somewhere private.");
+    }
+  };
+
+  const pasteBackupFromClipboard = async () => {
+    if (Platform.OS !== "web" || !navigator.clipboard || !navigator.clipboard.readText) {
+      setBackupFeedback({ type: "info", text: "Clipboard access is unavailable here. Tap the text box, then paste your backup (Ctrl+V on a computer, or press and hold and choose Paste on a phone)." });
+      return;
+    }
+    try {
+      const pasted = await navigator.clipboard.readText();
+      if (!pasted.trim()) {
+        setBackupFeedback({ type: "info", text: "Your clipboard is empty. Copy the complete backup text first, or paste it directly into the box." });
+        return;
+      }
+      setBackupText(pasted);
+      setBackupPreview(null);
+      setBackupRestoreComplete(false);
+      setBackupFeedback({ type: "success", text: "Backup text pasted. Choose Check backup to review it before restoring." });
+    } catch (_error) {
+      setBackupFeedback({ type: "info", text: "The browser did not allow clipboard access. Tap the text box and paste your backup directly (Ctrl+V on a computer, or press and hold and choose Paste on a phone)." });
     }
   };
 
@@ -6708,11 +6728,11 @@ export default function App() {
         <Text style={styles.bodyText}>Manage reusable choices used in forms. Editing a list changes future choices; existing records keep their saved values.</Text>
         {DROPDOWN_SETS.map((set) => <DropdownOptionManager key={set.key} set={set} options={db.dropdownOptions[set.key] || []} onSave={saveDropdownOption} onDelete={(key, index) => deleteDropdownOption(key, index)} />)}
       </SettingsAccordion>
-      <SettingsAccordion title="Data and backups" subtitle="Export, restore, recover, or reset the tracker" expanded={settingsSections.data} onPress={() => toggleSection("data")}>
+      <SettingsAccordion title="Data and backups" subtitle="Export, import, recover, or reset the tracker" expanded={settingsSections.data} onPress={() => toggleSection("data")}>
         <Card>
           <Text style={styles.cardTitle}>Back up your tracker</Text>
-          <Text style={styles.bodyText}>Export a shareable copy, restore a validated backup, or recover the last on-device copy. Before restoring, the current tracker is saved as a recovery copy. Exported backups contain all saved records; share them carefully.</Text>
-          <View style={styles.actionRow}><Action label="Export backup" onPress={exportBackup} /><Action label="Restore backup" quiet onPress={showBackup} /><Action label="Recover last copy" quiet onPress={restoreLocalRecovery} /></View>
+          <Text style={styles.bodyText}>Export backup text on one device, then import that text on another to continue using those records there. This replaces the tracker on this device; a recovery copy is saved first. Backups contain all saved records, and devices do not sync with each other.</Text>
+          <View style={styles.actionRow}><Action label="Export backup text" onPress={exportBackup} /><Action label="Import backup text" quiet onPress={showBackup} /><Action label="Recover last copy" quiet onPress={restoreLocalRecovery} /></View>
         </Card>
         <Card><Text style={styles.cardTitle}>Clear business records</Text><Text style={styles.bodyText}>This clears products, stock, listings, sales, notes, reviews, expenses, tasks, history, and your business name. Your theme and app preferences stay. A recovery copy is saved first.</Text><View style={styles.actionRow}><Action label="Clear all business records…" quiet onPress={() => { setClearConfirmText(""); setClearDataOpen(true); }} /></View></Card>
         <Card><Text style={styles.cardTitle}>Reset app to factory defaults</Text><Text style={styles.bodyText}>Remove all business records, profile details, theme choices, settings, and local recovery files. This cannot be undone. Export a backup first if you may need your data.</Text><View style={styles.actionRow}><Action label="Reset app to factory defaults…" quiet onPress={() => { setFactoryResetConfirmText(""); setFactoryResetOpen(true); }} /></View></Card>
@@ -7032,13 +7052,14 @@ export default function App() {
       </Modal>
       <Modal visible={backupOpen} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setBackupOpen(false)}>
         <SafeAreaView style={styles.modalSafe}>
-          <View style={styles.modalHeader}><Pressable onPress={() => setBackupOpen(false)}><Text style={styles.modalCancel}>Close</Text></Pressable><Text style={styles.modalTitle}>{backupMode === "export" ? "Copy backup text" : "Restore backup"}</Text>{backupMode === "export" ? <Pressable onPress={copyBackup}><Text style={styles.modalSave}>Copy text</Text></Pressable> : <View style={styles.modalHeaderSpacer} />}</View>
+          <View style={styles.modalHeader}><Pressable onPress={() => setBackupOpen(false)}><Text style={styles.modalCancel}>Close</Text></Pressable><Text style={styles.modalTitle}>{backupMode === "export" ? "Copy backup text" : "Import backup text"}</Text>{backupMode === "export" ? <Pressable onPress={copyBackup}><Text style={styles.modalSave}>Copy text</Text></Pressable> : <View style={styles.modalHeaderSpacer} />}</View>
           <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === "ios" ? "padding" : "height"}>
           <ScrollView contentContainerStyle={styles.backupContent} keyboardShouldPersistTaps="handled">
-            <Text style={styles.cardTitle}>{backupMode === "export" ? "Your tracker backup" : "Paste a GRIMMS backup"}</Text>
-            <Text style={styles.bodyText}>{backupMode === "export" ? "Choose Copy text, then keep the copied text somewhere private. To restore later, open Restore backup and paste the complete text. This is a copyable backup; nothing downloads to your computer." : "Paste the complete backup text below, then choose Check backup. You will see what is inside before confirming. Your current tracker is saved as a recovery copy first."}</Text>
-            <TextInput value={backupText} onChangeText={(value) => { setBackupText(value); setBackupPreview(null); setBackupFeedback(null); setBackupRestoreComplete(false); }} multiline autoCapitalize="none" autoCorrect={false} style={styles.backupInput} placeholder="Paste backup JSON here" placeholderTextColor={COLORS.placeholder} />
+            <Text style={styles.cardTitle}>{backupMode === "export" ? "Your tracker backup" : "Move a backup to this device"}</Text>
+            <Text style={styles.bodyText}>{backupMode === "export" ? "Choose Copy text, then keep the copied text somewhere private. To use this backup on another device, open Settings → Data and backups there and choose Import backup text. Nothing downloads automatically." : "Copy the complete backup text from your other device, then paste it below (or use Paste from clipboard). Check it to review its contents before restoring. This replaces the tracker on this device; a recovery copy of what is here now is saved first. Restoring does not sync the devices."}</Text>
+            <TextInput value={backupText} onChangeText={(value) => { setBackupText(value); setBackupPreview(null); setBackupFeedback(null); setBackupRestoreComplete(false); }} multiline autoCapitalize="none" autoCorrect={false} style={styles.backupInput} placeholder={backupMode === "export" ? "Backup text appears here" : "Tap here and paste the complete backup text"} placeholderTextColor={COLORS.placeholder} />
             {backupMode === "export" ? <View style={styles.actionRow}><Action label="Copy backup text" onPress={copyBackup} /><Action label="Select the text to copy manually" quiet onPress={() => Alert.alert("Copy manually", "Click inside the backup box, select all text, and copy it. Keep that text somewhere private.")} /></View> : <>
+              <View style={styles.actionRow}><Action label="Paste from clipboard" quiet onPress={pasteBackupFromClipboard} /></View>
               {backupFeedback ? <View style={[styles.backupFeedback, backupFeedback.type === "error" && styles.backupFeedbackError, backupFeedback.type === "success" && styles.backupFeedbackSuccess, backupFeedback.type === "info" && styles.backupFeedbackInfo]}><Text accessibilityLiveRegion="polite" style={styles.backupFeedbackText}>{backupFeedback.text}</Text></View> : null}
               {backupPreview ? <View style={styles.backupReview}><Text style={styles.fieldLabel}>Backup contents</Text><Text style={styles.bodyText}>{backupPreview.summary}</Text><Text style={styles.fieldHint}>Your current tracker will be saved in the recovery copy before this backup replaces it.</Text></View> : null}
             </>}
