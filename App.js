@@ -1274,15 +1274,24 @@ function Field({ field, value, onChange, onManageOptions }) {
               {field.searchable ? <TextInput value={optionSearch} onChangeText={setOptionSearch} placeholder={field.searchPlaceholder || "Search choices"} placeholderTextColor={COLORS.placeholder} style={styles.input} returnKeyType="search" /> : null}
               {visibleOptions.map((option) => {
                 const index = optionChoices.findIndex((item) => item.value === option.value);
+                const isSelected = field.multiple && selectedValues.includes(option.value);
+                const optionLabel = field.multiple ? (
+                  <View style={styles.multiOptionContent}>
+                    <View style={[styles.multiCheckbox, isSelected && styles.multiCheckboxSelected]}>
+                      {isSelected ? <Text style={styles.multiCheckboxCheck}>✓</Text> : null}
+                    </View>
+                    <Text style={styles.optionText}>{option.label}</Text>
+                  </View>
+                ) : <Text style={styles.optionText}>{option.label}</Text>;
                 return field.optionSet && onManageOptions && !option.currentOnly ? (
                 <View key={String(option.value)} style={styles.inlineOptionRow}>
-                  <Pressable style={styles.inlineOptionSelect} onPress={() => toggleOption(option)}><Text style={styles.optionText}>{field.multiple ? (Array.isArray(value) && value.includes(option.value) ? "✓  " : "○  ") : ""}{option.label}</Text></Pressable>
+                  <Pressable accessibilityRole={field.multiple ? "checkbox" : "button"} accessibilityState={field.multiple ? { checked: isSelected } : undefined} style={styles.inlineOptionSelect} onPress={() => toggleOption(option)}>{optionLabel}</Pressable>
                   <Pressable hitSlop={8} onPress={() => startOptionEdit("edit", index, option)}><Text style={styles.inlineManageText}>Edit</Text></Pressable>
                   <Pressable onPress={() => onManageOptions("delete", field.optionSet, index, value, onChange)}><Text style={styles.deleteOptionText}>×</Text></Pressable>
                 </View>
               ) : (
-                <Pressable key={String(option.value)} style={styles.optionItem} onPress={() => toggleOption(option)}>
-                  <Text style={styles.optionText}>{option.label}</Text>
+                <Pressable key={String(option.value)} accessibilityRole={field.multiple ? "checkbox" : "button"} accessibilityState={field.multiple ? { checked: isSelected } : undefined} style={[styles.optionItem, isSelected && styles.optionItemSelected]} onPress={() => toggleOption(option)}>
+                  {optionLabel}
                 </Pressable>
               );
               })}
@@ -6420,6 +6429,11 @@ function makeStyles() { return StyleSheet.create({
   selectChevron: { color: COLORS.muted, fontSize: 17 },
   optionList: { marginTop: 5, borderRadius: 11, borderWidth: 1, borderColor: COLORS.line, backgroundColor: COLORS.card, overflow: "hidden" },
   optionItem: { padding: 12, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: COLORS.line },
+  optionItemSelected: { backgroundColor: COLORS.soft },
+  multiOptionContent: { flexDirection: "row", alignItems: "center", gap: 10 },
+  multiCheckbox: { width: 20, height: 20, borderRadius: 5, borderWidth: 1.5, borderColor: COLORS.muted, backgroundColor: COLORS.card, alignItems: "center", justifyContent: "center" },
+  multiCheckboxSelected: { backgroundColor: COLORS.wine, borderColor: COLORS.wine },
+  multiCheckboxCheck: { color: COLORS.onAccent, fontSize: 13, fontWeight: "800", lineHeight: 16 },
   inlineOptionRow: { minHeight: 42, flexDirection: "row", alignItems: "center", borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: COLORS.line, paddingHorizontal: 8, gap: 12 },
   inlineOptionSelect: { flex: 1, paddingVertical: 11 },
   inlineManageText: { color: COLORS.wine, fontSize: 11, fontWeight: "700", paddingVertical: 10 },
