@@ -244,6 +244,7 @@ const ANNOUNCEMENTS = [
 ];
 const PAGE_ICON_NAMES = {
   Dashboard: "dashboard",
+  "Business Overview": "analytics",
   Components: "components",
   Products: "products",
   Listings: "listings",
@@ -431,6 +432,7 @@ const MORE_ITEMS = [
   ["Components", "CM", "Materials, stock, and restocks"],
   ["Products", "PD", "Product designs, prices, and inventory"],
   ["Listings", "LS", "Manage marketplace pages"],
+  ["Business Overview", "BO", "Detailed business report for a chosen date range"],
   ["Listing Analytics", "AN", "Record listing stats and review performance over time"],
   ["Orders", "OR", "Track sales and fulfillment"],
   ["Production", "PR", "Make products and record material usage"],
@@ -448,8 +450,9 @@ const MORE_ITEMS = [
 
 const SIDEBAR_GROUPS = [
   { label: "WORKSPACE", pages: ["Dashboard", "Components", "Products", "Notes"] },
-  { label: "SALES", pages: ["Listings", "Listing Analytics", "Orders", "Reviews"] },
-  { label: "OPERATIONS", pages: ["Production", "Finances", "Calendar", "Time", "Ideas", "Audit", "Suppliers"] },
+  { label: "SALES", pages: ["Listings", "Orders", "Reviews"] },
+  { label: "INSIGHTS", pages: ["Business Overview", "Listing Analytics", "Finances"] },
+  { label: "OPERATIONS", pages: ["Production", "Calendar", "Time", "Ideas", "Audit", "Suppliers"] },
   { label: "SUPPORT", pages: ["Help & FAQ"] },
 ];
 
@@ -889,7 +892,10 @@ const SORT_OPTIONS = [
   { label: "Price low to high", value: "priceAsc" },
   { label: "Price high to low", value: "priceDesc" },
 ];
-const LISTING_SORT_OPTIONS = SORT_OPTIONS.concat([{ label: "Product SKU low to high", value: "productSkuAsc" }]);
+const LISTING_SORT_OPTIONS = SORT_OPTIONS.concat([
+  { label: "Product SKU low to high", value: "productSkuAsc" },
+  { label: "Product SKU high to low", value: "productSkuDesc" },
+]);
 const sortableDate = (value) => {
   if (!value) return 0;
   const text = String(value);
@@ -914,6 +920,7 @@ const sortRecords = (records, mode) => records.slice().sort((a, b) => {
   if (mode === "priceAsc") return aPrice - bPrice;
   if (mode === "priceDesc") return bPrice - aPrice;
   if (mode === "productSkuAsc") return String(a.productSku || a.sku || "").localeCompare(String(b.productSku || b.sku || ""), undefined, { numeric: true, sensitivity: "base" }) || aName.localeCompare(bName);
+  if (mode === "productSkuDesc") return String(b.productSku || b.sku || "").localeCompare(String(a.productSku || a.sku || ""), undefined, { numeric: true, sensitivity: "base" }) || aName.localeCompare(bName);
   return bDate - aDate;
 });
 const currentRecipeCost = (product, components) => (product.recipe || []).reduce((sum, part) => {
@@ -2142,6 +2149,7 @@ const HELP_COPY = {
   Products: ["A product is a completed item you intend to sell. Add its buyer-facing name, normal price, ready-to-sell count, colors, materials, condition, and the weight of the fully packed parcel. The recipe is optional: it lists how much of each component one finished unit consumes, so Production can update stock. Descriptive materials text and recipe quantities are separate fields.", "Example: add ‘Pearl drop earrings,’ price 28.00, inventory 3, colors ‘ivory, brass.’ In the recipe, assign 2 hooks and 4 pearls per pair. Recording production of 2 pairs then uses 4 hooks and 8 pearls."],
   Listings: ["A listing is your record of a product page on one or more sales channels. A listing follows its linked product’s name automatically unless you enter a listing-only name. For the marketplace description, copy the linked product text when you want or write a separate version; copied descriptions are flagged when the product text changes. These edits save in this tracker and do not publish changes to the marketplace. Add prices, status, dates, public URLs, and discount plans here.", "Example: create a listing for ‘Pearl drop earrings’ and select Etsy. Leave Listing name blank to follow the product name, choose Copy the product description, or write different buyer-facing text. If the product description changes later, Listings shows an update reminder so you can review and copy it again."],
   "Listing Analytics": ["Record the current totals shown by a marketplace for a listing and channel. Each recording is saved as a timestamped snapshot; the first one is a baseline, and later snapshots show increases between checks. Marketplace totals are entered manually and are not imported. Leave metrics blank when a channel does not provide them. Date filters assign a snapshot increase to the later check and do not fill in days with no recordings.", "Example: record 100 views on Monday and 125 on Tuesday for the same Etsy listing. The dashboard counts 25 observed additional views on Tuesday, not 225 total views. Record Depop separately even if the same product is listed there."],
+  "Business Overview": ["Choose a start date and end date to create a detailed report from the records saved in this tracker. It includes orders, product sales, costs, expenses, production, purchases, listing dates, discounts, relists, marketplace analytics, reviews, and tracked work. Use Copy report to paste the complete summary into a document or message. Marketplace totals are manual entries, not live imports. The component and product stock section is the current snapshot; dated inventory history shows recorded changes during the selected period, but this tracker does not recreate stock levels for past dates. Profit is an estimate based on entered fees, payouts, product costs, shipping, and expenses; it excludes labor and taxes.", "Example: choose October 1 through October 31, review the sales and stock changes alongside marketplace view and favorite increases, then copy the report for a monthly business review. If your app records an expense or sale late, add or correct its date and the report will include it."],
   Orders: ["An order is a sale you enter manually; the app does not import orders or take payment. Choose the product, quantity, sale channel, price, date, and any shipping or fee details. Saving a sale reduces the product’s finished inventory. Move its fulfillment status forward only when that step has happened; Details keeps the timeline, refund history, and corrections together. Enter actual fees from the marketplace when available; otherwise the saved fee rule is an estimate.", "Example: record one necklace at 28.00 sold through Etsy on 12/02/2026. The product inventory drops by one. Set ‘Needs Packaging’ while it is waiting, ‘Ready to Ship’ after packing, and ‘Shipped’ only after giving it to the carrier; then enter the tracking number."],
   Reviews: ["This is a private log of feedback you enter; it does not fetch, post, or reply to marketplace reviews. Save the buyer’s wording, rating, date, and optional public response. Link a review to a product or order when you can identify it. Keep any notes private to your tracker and avoid adding sensitive buyer information.", "Example: save the exact text ‘Beautifully made and arrived quickly,’ choose five stars, enter the posted date, link the earrings product, and paste your actual public reply if you wrote one."],
   Finances: ["This page summarizes recorded sales, refunds, marketplace fees, shipping, other income, and business expenses. Profit is an estimate based on the records you enter; it does not include labor, taxes, or unrecorded costs. Add expenses from receipts and enter actual order fees or final payouts when known. Compare totals with your marketplace statements.", "Example: record a $4.85 shipping label as an expense in ‘Shipping’ if you want it in business-expense totals. The order’s Shipping cost field also records shipping paid for that sale, so avoid entering the same cost twice."],
@@ -2649,6 +2657,8 @@ export default function App() {
   const [analyticsRange, setAnalyticsRange] = useState("30 days");
   const [analyticsCustomStart, setAnalyticsCustomStart] = useState(TODAY);
   const [analyticsCustomEnd, setAnalyticsCustomEnd] = useState(TODAY);
+  const [businessOverviewStart, setBusinessOverviewStart] = useState(TODAY);
+  const [businessOverviewEnd, setBusinessOverviewEnd] = useState(TODAY);
   const [analyticsMarketplaceFilter, setAnalyticsMarketplaceFilter] = useState("All");
   const [analyticsCategoryFilter, setAnalyticsCategoryFilter] = useState("All");
   const [analyticsStatusFilter, setAnalyticsStatusFilter] = useState("Active");
@@ -5354,6 +5364,316 @@ export default function App() {
     setAnalyticsEntryMode("");
   };
 
+  const renderBusinessOverview = () => {
+    const validDates = !!parseDateInput(businessOverviewStart) && !!parseDateInput(businessOverviewEnd);
+    const parsedStart = parseDateInput(businessOverviewStart) || TODAY;
+    const parsedEnd = parseDateInput(businessOverviewEnd) || TODAY;
+    const rangeStart = parsedStart <= parsedEnd ? parsedStart : parsedEnd;
+    const rangeEnd = parsedStart <= parsedEnd ? parsedEnd : parsedStart;
+    const recordDate = (value) => timestampDateKey(value) || parseDateInput(value) || "";
+    const inRange = (value) => { const date = recordDate(value); return !!date && date >= rangeStart && date <= rangeEnd; };
+    const periodOrders = (db.orders || []).filter((order) => inRange(order.date));
+    const periodIncomes = (db.incomes || []).filter((item) => inRange(item.date));
+    const periodExpenses = (db.expenses || []).filter((item) => inRange(item.date));
+    const periodProductions = (db.productions || []).filter((item) => inRange(item.date));
+    const periodPurchases = (db.purchases || []).filter((item) => inRange(item.date));
+    const periodComponentTransactions = (db.componentTransactions || []).filter((item) => inRange(item.date));
+    const periodProductTransactions = (db.productTransactions || []).filter((item) => inRange(item.date));
+    const periodReviews = (db.reviews || []).filter((item) => inRange(item.date));
+    const periodTasks = (db.tasks || []).filter((item) => inRange(item.dueDate || item.date));
+    const periodEvents = (db.events || []).filter((item) => inRange(item.date));
+    const periodWorkPlans = (db.workPlans || []).filter((item) => inRange(item.date));
+    const periodTimeSessions = (db.timeSessions || []).filter((item) => inRange(item.date));
+    const periodTimerSessions = (db.timerSessions || []).filter((item) => inRange(item.date));
+    const periodListings = (db.listings || []).filter((item) => inRange(item.createdAt));
+    const periodFirstListings = (db.listings || []).filter((item) => inRange(item.startDate));
+    const periodRelists = (db.listings || []).flatMap((listing) => (listing.relistHistory || []).filter((entry) => inRange(entry.date)).map((entry) => ({ listing, entry })));
+    const plannedRelists = (db.listings || []).filter((listing) => inRange(listing.relistDate)).map((listing) => ({ listing, date: listing.relistDate }));
+    const discounts = (db.listings || []).flatMap((listing) => (listing.discountPlans || []).filter((plan) => {
+      const start = parseDateInput(plan.startDate);
+      const end = parseDateInput(plan.endDate) || "9999-12-31";
+      return !!start && start <= rangeEnd && end >= rangeStart;
+    }).map((plan) => ({ listing, plan })));
+
+    const gross = periodOrders.reduce((sum, order) => sum + totalOrder(order), 0);
+    const refunds = periodOrders.reduce((sum, order) => sum + (Number(order.refundAmount) || 0), 0);
+    const fees = periodOrders.reduce((sum, order) => sum + (Number(order.fees) || 0), 0);
+    const shipping = periodOrders.reduce((sum, order) => sum + (Number(order.shippingCost) || 0), 0);
+    const payouts = periodOrders.reduce((sum, order) => sum + netOrderPayout(order), 0);
+    const materialCosts = periodOrders.reduce((sum, order) => sum + orderMaterialCost(order), 0);
+    const salesDeductionExpenses = periodExpenses.filter((item) => item.expenseType === "salesDeduction").reduce((sum, item) => sum + (Number(item.amount) || 0), 0);
+    const outOfPocketExpenses = periodExpenses.filter((item) => item.expenseType !== "salesDeduction").reduce((sum, item) => sum + (Number(item.amount) || 0), 0);
+    const expenseTotal = salesDeductionExpenses + outOfPocketExpenses;
+    const otherIncome = periodIncomes.reduce((sum, item) => sum + (Number(item.amount) || 0), 0);
+    const estimatedProfit = payouts - shipping - salesDeductionExpenses - outOfPocketExpenses - materialCosts;
+    const cashAfterExpenses = payouts + otherIncome - shipping - expenseTotal;
+    const unitsOrdered = periodOrders.reduce((sum, order) => sum + (order.items || []).reduce((lineSum, item) => lineSum + Math.max(0, Number(item.quantity) || 0), 0), 0);
+    const soldProducts = new Map();
+    const channelSales = new Map();
+    periodOrders.forEach((order) => {
+      const channel = String(order.marketplace || "Direct").trim() || "Direct";
+      const channelRow = channelSales.get(channel) || { orders: 0, units: 0, gross: 0, refunds: 0 };
+      channelRow.orders += 1;
+      channelRow.gross += totalOrder(order);
+      channelRow.refunds += Number(order.refundAmount) || 0;
+      channelRow.units += (order.items || []).reduce((sum, item) => sum + Math.max(0, Number(item.quantity) || 0), 0);
+      channelSales.set(channel, channelRow);
+      const lines = order.items || [];
+      lines.forEach((line, index) => {
+        const matchedProduct = (db.products || []).find((product) => product.id === line.productId || (!line.productId && line.productSku && String(product.sku || "").toLowerCase() === String(line.productSku).toLowerCase()));
+        const key = matchedProduct ? matchedProduct.id : line.productId || "sku:" + (line.productSku || line.productName || "unknown");
+        const row = soldProducts.get(key) || { productId: matchedProduct ? matchedProduct.id : line.productId || "", productName: line.productName || matchedProduct && matchedProduct.name || "Deleted or unlinked product", productSku: line.productSku || matchedProduct && matchedProduct.sku || "", units: 0, gross: 0, materialCost: 0 };
+        const quantity = Math.max(0, Number(line.quantity) || 0);
+        const returned = lines.length === 1 && index === 0 ? Math.min(quantity, orderRestockedQuantity(order)) : 0;
+        const netUnits = Math.max(0, quantity - returned);
+        row.units += netUnits;
+        row.gross += quantity * Math.max(0, Number(line.unitPrice) || 0);
+        row.materialCost += netUnits * Math.max(0, Number(line.unitCost) || 0);
+        soldProducts.set(key, row);
+      });
+    });
+    const salesRows = Array.from(soldProducts.values()).sort((a, b) => b.units - a.units || b.gross - a.gross || a.productName.localeCompare(b.productName));
+    const productSales = (product) => soldProducts.get(product.id) || soldProducts.get("sku:" + (product.sku || product.name)) || null;
+    const activeComponents = (db.components || []).filter(active);
+    const archivedComponents = (db.components || []).filter((item) => !active(item));
+    const activeProducts = (db.products || []).filter(active);
+    const archivedProducts = (db.products || []).filter((item) => !active(item));
+    const liveListings = (db.listings || []).filter((listing) => listingReservesProductStock(listing, (db.products || []).find((product) => product.id === listing.productId)));
+    const currentListingLines = (db.listings || []).map((listing) => {
+      const status = listing.archived ? "Archived" : listing.needsArchive || listing.status === "Sold" ? "Sold" : listing.status || "Draft";
+      return `${status} · ${listing.listingSku || "No listing SKU"} · ${listing.productName || "Product name not saved"} · ${listing.productSku || "No product SKU"} · ${money(listing.price, db.currency)} · ${listingAnalyticsChannels(listing).join(", ") || "No marketplace saved"} · first listed ${listing.startDate ? dateLabel(listing.startDate) : "date not saved"} · ${soldQuantityForListing(listing, db.orders || [])} sold all time${listing.relistDate ? " · next relist " + dateLabel(listing.relistDate) : ""}`;
+    }).sort((a, b) => a.localeCompare(b));
+    const allReports = (db.listings || []).flatMap((listing) => (listing.activityReports || []).map((report) => ({ ...report, listingId: report.listingId || listing.id, listing })));
+    const reportsByScope = new Map();
+    allReports.forEach((report) => {
+      const platform = report.platform || listingAnalyticsChannels(report.listing)[0] || "Marketplace not saved";
+      const key = report.listingId + "::" + platform;
+      if (!reportsByScope.has(key)) reportsByScope.set(key, []);
+      const date = recordDate(report.recordedAt || report.periodEnd || report.periodStart || report.date);
+      reportsByScope.get(key).push({ ...report, platform, reportDate: date, orderKey: String(report.recordedAt || report.periodEnd || report.periodStart || "") });
+    });
+    const analyticsDeltas = [];
+    reportsByScope.forEach((scopeReports) => {
+      scopeReports.sort((a, b) => a.orderKey.localeCompare(b.orderKey));
+      const previousByMetric = {};
+      scopeReports.forEach((report) => LISTING_ANALYTICS_METRICS.forEach(({ key }) => {
+        const raw = report.metrics && report.metrics[key];
+        if (raw == null || !Number.isFinite(Number(raw))) return;
+        const current = Math.max(0, Number(raw));
+        if (report.metricMode === "period") {
+          const date = recordDate(report.periodEnd || report.periodStart || report.reportDate);
+          if (date >= rangeStart && date <= rangeEnd) analyticsDeltas.push({ listing: report.listing, platform: report.platform, key, value: current, date });
+        } else {
+          const previous = previousByMetric[key];
+          if (previous != null && report.reportDate >= rangeStart && report.reportDate <= rangeEnd) analyticsDeltas.push({ listing: report.listing, platform: report.platform, key, value: current >= previous ? current - previous : current, date: report.reportDate });
+          previousByMetric[key] = current;
+        }
+      }));
+    });
+    const analyticsTotals = Object.fromEntries(LISTING_ANALYTICS_METRICS.map(({ key }) => [key, analyticsDeltas.filter((entry) => entry.key === key).reduce((sum, entry) => sum + entry.value, 0)]));
+    const analyticsChannels = new Map();
+    analyticsDeltas.forEach((entry) => {
+      const row = analyticsChannels.get(entry.platform) || Object.fromEntries(LISTING_ANALYTICS_METRICS.map(({ key }) => [key, 0]));
+      row[entry.key] += entry.value;
+      analyticsChannels.set(entry.platform, row);
+    });
+    const topListings = (db.listings || []).map((listing) => {
+      const stats = Object.fromEntries(LISTING_ANALYTICS_METRICS.map(({ key }) => [key, analyticsDeltas.filter((entry) => entry.listing.id === listing.id && entry.key === key).reduce((sum, entry) => sum + entry.value, 0)]));
+      return { listing, units: soldQuantityForListing(listing, periodOrders), stats };
+    }).sort((a, b) => b.units - a.units || b.stats.views - a.stats.views || String(a.listing.productName || "").localeCompare(String(b.listing.productName || "")));
+    const periodPurchaseSpend = periodPurchases.reduce((sum, item) => sum + (Number(item.purchaseCost) || 0) + (Number(item.shippingCost) || 0), 0);
+    const componentStockValue = activeComponents.reduce((sum, item) => sum + Math.max(0, Number(item.quantity) || 0) * Math.max(0, Number(item.cost) || 0), 0);
+    const componentStockUnits = activeComponents.reduce((sum, item) => sum + (Number(item.quantity) || 0), 0);
+    const recordedProductionCost = periodProductions.reduce((sum, batch) => sum + (batch.recipeSnapshot || []).reduce((batchCost, part) => batchCost + Math.max(0, Number(part.required) || 0) * Math.max(0, Number(part.unitCost) || 0), 0), 0);
+    const producedUnits = periodProductions.reduce((sum, batch) => sum + (Number(batch.quantity) || 0), 0);
+    const averageReview = periodReviews.length ? periodReviews.reduce((sum, review) => sum + (Number(review.stars) || 0), 0) / periodReviews.length : 0;
+    const trackedHours = periodTimeSessions.reduce((sum, session) => sum + (Number(session.durationMs) || 0), 0) + periodTimerSessions.reduce((sum, session) => sum + (Number(session.durationMs) || 0), 0);
+    const orderStatuses = new Map();
+    periodOrders.forEach((order) => { const status = order.refundedAt ? "Refunded" : order.status || "Status not set"; orderStatuses.set(status, (orderStatuses.get(status) || 0) + 1); });
+    const componentMovementLines = periodComponentTransactions.map((entry) => {
+      const component = (db.components || []).find((item) => item.id === entry.componentId);
+      return `${recordDate(entry.date)} · ${component ? component.name : "Deleted component"} · ${entry.kind || "Stock change"} · ${Number(entry.quantity) > 0 ? "+" : ""}${entry.quantity} ${component && component.unit || "units"}${entry.note ? " · " + entry.note : ""}`;
+    });
+    const productMovementLines = periodProductTransactions.map((entry) => {
+      const product = (db.products || []).find((item) => item.id === entry.productId);
+      return `${recordDate(entry.date)} · ${product ? product.name : "Deleted product"} · ${entry.kind || "Stock change"} · ${Number(entry.quantity) > 0 ? "+" : ""}${entry.quantity}${entry.note ? " · " + entry.note : ""}`;
+    });
+    const componentLines = (db.components || []).map((item) => `${item.archived ? "Archived" : "Active"} · ${item.sku || "No SKU"} · ${item.name} · ${Number(item.quantity) || 0} ${item.unit || "units"} on hand · ${money(item.cost, db.currency)}/unit · ${item.category || "Other"}`).sort((a, b) => a.localeCompare(b));
+    const productLines = (db.products || []).map((item) => {
+      const onHand = Math.max(0, Number(item.inventory) || 0);
+      const ready = productAvailableUnits(item, db.listings || []);
+      const reserved = Math.max(0, onHand - ready);
+      const recipeCost = currentRecipeCost(item, db.components || []);
+      const sales = productSales(item);
+      const recipe = (item.recipe || []).map((part) => `${part.quantity} ${part.unit || "units"} ${part.name}`).join(", ") || "No recipe saved";
+      return `${item.archived ? "Archived" : "Active"} · ${item.sku || "No SKU"} · ${item.name} · ${ready} ready / ${reserved} reserved / ${onHand} finished on hand · ${money(item.price, db.currency)} price · ${money(recipeCost, db.currency)} current recipe cost/unit · ${sales ? sales.units + " sold in range" : "no recorded sales in range"} · Recipe: ${recipe}`;
+    }).sort((a, b) => a.localeCompare(b));
+    const noSaleProducts = (db.products || []).filter((product) => !productSales(product) || productSales(product).units <= 0);
+    const dateRangeText = `${dateLabel(rangeStart)} – ${dateLabel(rangeEnd)}`;
+    const fmtList = (items, fallback = "None recorded.") => items.length ? items.join("\n") : fallback;
+    const discountLines = discounts.map(({ listing, plan }) => `${listing.listingSku || "Listing"} · ${listing.productName} · ${plan.percent}% · ${dateLabel(plan.startDate)}${plan.endDate ? " to " + dateLabel(plan.endDate) : " onward"}${plan.notes ? " · " + plan.notes : ""}`);
+    const relistLines = periodRelists.map(({ listing, entry }) => `${recordDate(entry.date)} · ${listing.listingSku || "Listing"} · ${listing.productName} · ${money(entry.previousPrice, db.currency)} → ${money(entry.newPrice, db.currency)}${entry.note ? " · " + entry.note : ""}`);
+    const platformSalesLines = Array.from(channelSales.entries()).sort((a, b) => b[1].gross - a[1].gross).map(([channel, row]) => `${channel} · ${row.orders} orders · ${row.units} units · ${money(row.gross, db.currency)} gross · ${money(row.refunds, db.currency)} refunds`);
+    const platformAnalyticsLines = Array.from(analyticsChannels.entries()).sort((a, b) => (b[1].views + b[1].favorites + b[1].likes) - (a[1].views + a[1].favorites + a[1].likes)).map(([channel, values]) => `${channel} · ${LISTING_ANALYTICS_METRICS.map(({ key, label }) => `${label} ${values[key]}`).join(" · ")}`);
+    const topListingLines = topListings.filter((entry) => entry.units > 0 || Object.values(entry.stats).some((value) => value > 0)).slice(0, 10).map((entry, index) => `${index + 1}. ${entry.listing.productName} · ${entry.listing.listingSku || "Listing SKU not saved"} · ${entry.units} units sold · ${entry.stats.views} view increase · ${entry.stats.favorites} favorite increase · ${listingAnalyticsChannels(entry.listing).join(", ") || "No marketplace saved"}`);
+    const orderStatusLines = Array.from(orderStatuses.entries()).map(([status, count]) => `${status}: ${count}`);
+    const expenseLines = periodExpenses.map((item) => `${recordDate(item.date)} · ${item.category || "Other"} · ${item.description || "Expense"} · ${money(item.amount, db.currency)} · ${item.expenseType === "salesDeduction" ? "deducted from sale payout" : "out of pocket"}${item.notes ? " · " + item.notes : ""}`);
+    const incomeLines = periodIncomes.map((item) => `${recordDate(item.date)} · ${item.category || "Other"} · ${item.description || "Income"} · ${money(item.amount, db.currency)}${item.notes ? " · " + item.notes : ""}`);
+    const purchaseLines = periodPurchases.map((item) => `${recordDate(item.date)} · ${item.componentName || "Component purchase"} · ${item.quantity} units · materials ${item.purchaseCost == null ? "cost not entered" : money(item.purchaseCost, db.currency)} · shipping ${money(item.shippingCost, db.currency)} · ${item.supplier || "Supplier not saved"}`);
+    const orderLines = periodOrders.map((order) => `${recordDate(order.date)} · ${order.orderSku || "Order SKU not saved"} · ${order.marketplace || "Direct"} · ${order.status || "Status not set"}${order.refundedAt ? " · refunded" : ""} · ${(order.items || []).map((item) => `${item.quantity} × ${item.productName || "Product"} at ${money(item.unitPrice, db.currency)}`).join(", ") || "No product lines"} · gross ${money(totalOrder(order), db.currency)} · fees ${money(order.fees, db.currency)} · refund ${money(order.refundAmount, db.currency)} · shipping ${money(order.shippingCost, db.currency)} · payout ${money(netOrderPayout(order), db.currency)}${order.feeSource === "actual" ? " (actual)" : " (estimate)"}`);
+    const productionLines = periodProductions.map((batch) => `${recordDate(batch.date)} · ${batch.quantity} × ${batch.productName} (${batch.productSku || "No SKU"}) · saved recipe cost ${money((batch.recipeSnapshot || []).reduce((sum, part) => sum + Math.max(0, Number(part.required) || 0) * Math.max(0, Number(part.unitCost) || 0), 0), db.currency)}`);
+    const createdListingLines = periodListings.map((listing) => `${recordDate(listing.createdAt)} · ${listing.listingSku || "Listing"} · ${listing.productName} · ${listing.status || "Draft"}${listing.archived ? " · archived" : ""} · ${money(listing.price, db.currency)} · ${listingAnalyticsChannels(listing).join(", ") || "No marketplace saved"}`);
+    const workLines = periodTimeSessions.concat(periodTimerSessions).map((session) => `${recordDate(session.date)} · ${session.projectName || session.label || "Work session"} · ${(session.taskTitles || []).join(", ") || "No task linked"} · ${formatDuration(session.durationMs)}${session.workNote ? " · " + session.workNote : ""}`);
+    const workPlanLines = periodWorkPlans.map((plan) => `${recordDate(plan.date)} · ${plan.title || "Planned work"} · ${plan.startTime || ""}${plan.endTime ? "–" + plan.endTime : ""} · ${plan.done ? "Completed" : "Planned"}${plan.projectName ? " · " + plan.projectName : ""}`);
+    const reviewLines = periodReviews.map((review) => `${recordDate(review.date)} · ${review.stars || "?"}/5 · ${review.platform || "Marketplace not saved"} · ${review.productName || "Product not linked"}${review.reviewText ? " · " + review.reviewText : ""}`);
+    const reportText = [
+      `GRIMMS BUSINESS OVERVIEW · ${dateRangeText}`,
+      `Prepared ${dateLabel(TODAY)} · Currency ${db.currency || "USD"}`,
+      "",
+      "AT A GLANCE",
+      `Orders ${periodOrders.length} · Units sold ${salesRows.reduce((sum, row) => sum + row.units, 0)} · Gross sales ${money(gross, db.currency)} · Refunds ${money(refunds, db.currency)} · Fees ${money(fees, db.currency)} · Payouts ${money(payouts, db.currency)}`,
+      `Product material cost on recorded sales ${money(materialCosts, db.currency)} · Shipping paid ${money(shipping, db.currency)} · Expenses ${money(expenseTotal, db.currency)} · Estimated profit ${money(estimatedProfit, db.currency)} · Other income ${money(otherIncome, db.currency)} · Cash after expenses ${money(cashAfterExpenses, db.currency)}`,
+      `Current catalog snapshot ${activeComponents.length} active / ${archivedComponents.length} archived components · ${activeProducts.length} active / ${archivedProducts.length} archived products · ${liveListings.length} live stock-reserving listings`,
+      "",
+      "SALES BY PRODUCT",
+      fmtList(salesRows.map((row) => `${row.productName}${row.productSku ? " (" + row.productSku + ")" : ""} · ${row.units} units · ${money(row.gross, db.currency)} gross line sales · ${money(row.materialCost, db.currency)} recorded material cost`)),
+      "",
+      "PRODUCTS WITH NO RECORDED SALES IN THIS PERIOD",
+      fmtList(noSaleProducts.map((item) => `${item.sku || "No SKU"} · ${item.name} · ${item.archived ? "Archived" : "Active"} · ${Math.max(0, Number(item.inventory) || 0)} finished on hand`)),
+      "",
+      "ORDERS BY MARKETPLACE",
+      fmtList(platformSalesLines),
+      `Order fulfillment statuses: ${orderStatusLines.join(" · ") || "None recorded"}`,
+      "ORDER DETAILS",
+      fmtList(orderLines),
+      "",
+      "MARKETPLACE ANALYTICS INCREASES",
+      `Views ${analyticsTotals.views} · Impressions ${analyticsTotals.impressions} · Clicks ${analyticsTotals.clicks} · Favorites ${analyticsTotals.favorites} · Likes ${analyticsTotals.likes} · Watchers ${analyticsTotals.watchers} · Offers ${analyticsTotals.offers}`,
+      fmtList(platformAnalyticsLines, "No comparable marketplace analytics increases were recorded in this period. A first snapshot is a baseline and is not counted as an increase."),
+      "",
+      "TOP LISTING PERFORMERS",
+      fmtList(topListingLines),
+      "",
+      "PRODUCTION AND COST TO MAKE",
+      `Batches ${periodProductions.length} · Finished units made ${producedUnits} · Saved batch recipe material cost ${money(recordedProductionCost, db.currency)} · COGS on sales ${money(materialCosts, db.currency)}`,
+      fmtList(productionLines),
+      "Current per-unit recipe estimates and product stock (not historical):",
+      fmtList(productLines),
+      "",
+      "COMPONENT STOCK CHANGES IN THIS PERIOD",
+      fmtList(componentMovementLines),
+      "PRODUCT STOCK CHANGES IN THIS PERIOD",
+      fmtList(productMovementLines),
+      "",
+      "COMPONENT PURCHASES AND RESTOCKS",
+      `Purchases ${periodPurchases.length} · Recorded materials and shipping spend ${money(periodPurchaseSpend, db.currency)}`,
+      fmtList(purchaseLines),
+      "",
+      "LISTING DATES, DISCOUNTS, AND RELISTS",
+      `Listings created in range ${periodListings.length} · First-listed dates in range ${periodFirstListings.length} · Relist history entries ${periodRelists.length} · Planned relist dates in range ${plannedRelists.length} · Discount plans overlapping range ${discounts.length}`,
+      "Listings created:", fmtList(createdListingLines),
+      `First listing dates: ${periodFirstListings.map((item) => `${item.listingSku || "Listing"} ${item.productName} (${dateLabel(item.startDate)})`).join(" · ") || "None recorded"}`,
+      `Relist plans: ${plannedRelists.map(({ listing, date }) => `${listing.listingSku || "Listing"} ${listing.productName} (${dateLabel(date)}${listing.relistDone ? ", completed" : ", planned"})`).join(" · ") || "None due in this range"}`,
+      "Discounts:", fmtList(discountLines),
+      "Relist history:", fmtList(relistLines),
+      "",
+      "INCOME, EXPENSES, AND REVIEWS",
+      `Other income ${money(otherIncome, db.currency)} · Out-of-pocket expenses ${money(outOfPocketExpenses, db.currency)} · Expenses deducted from sale payout ${money(salesDeductionExpenses, db.currency)}`,
+      "Income:", fmtList(incomeLines),
+      "Expenses:", fmtList(expenseLines),
+      `Reviews ${periodReviews.length} · Average rating ${periodReviews.length ? averageReview.toFixed(1) + "/5" : "—"}`,
+      fmtList(reviewLines),
+      "",
+      "WORK AND BUSINESS SCHEDULE",
+      `Tracked time ${formatDuration(trackedHours)} · Work sessions ${periodTimeSessions.length + periodTimerSessions.length} · Tasks due in range ${periodTasks.length} · Calendar events ${periodEvents.length} · Planned work blocks ${periodWorkPlans.length}`,
+      fmtList(workLines),
+      "Planned work blocks:", fmtList(workPlanLines),
+      `Tasks: ${periodTasks.map((item) => `${item.title || item.name || "Task"} (${item.done ? "done" : "open"})`).join(" · ") || "None due in this range"}`,
+      `Events: ${periodEvents.map((item) => `${item.title || item.name || "Event"} (${dateLabel(item.date)})`).join(" · ") || "None recorded in this range"}`,
+      "",
+      "CURRENT COMPONENT CATALOG (snapshot today)",
+      `${activeComponents.length} active components · ${componentStockUnits} total units across tracked units · ${money(componentStockValue, db.currency)} stock value at current cost`,
+      fmtList(componentLines),
+      "",
+      "CURRENT LISTINGS (snapshot today)",
+      fmtList(currentListingLines),
+      "",
+      "REPORT NOTES",
+      "This report uses records saved in this tracker and the dates on those records. Marketplace analytics are entered manually; the first saved snapshot is a baseline, and only later observed increases are counted. Current stock, product recipes, and current component costs are snapshots today, not reconstructed historical balances. Estimated profit uses saved order payouts or estimated gross less fees and refunds, then subtracts shipping, recorded expenses, and saved unit material costs. It does not include labor, taxes, missing records, or unentered marketplace costs. Other income is shown separately and is included in cash after expenses, not in estimated profit.",
+    ].join("\n");
+    const copyReport = async () => {
+      if (!validDates) {
+        Alert.alert("Enter valid dates", "Choose a valid start date and end date before copying the report.");
+        return;
+      }
+      try {
+        if (Platform.OS === "web" && typeof navigator !== "undefined" && navigator.clipboard && navigator.clipboard.writeText) {
+          await navigator.clipboard.writeText(reportText);
+        } else if (Platform.OS === "web" && typeof document !== "undefined") {
+          const textarea = document.createElement("textarea");
+          textarea.value = reportText;
+          textarea.style.position = "fixed";
+          textarea.style.opacity = "0";
+          document.body.appendChild(textarea);
+          textarea.select();
+          const copied = document.execCommand("copy");
+          document.body.removeChild(textarea);
+          if (!copied) throw new Error("Clipboard access was unavailable");
+        } else {
+          throw new Error("Copying is available in the web version");
+        }
+        setRecordActionNotice("Business overview copied. Paste it into your report or notes.");
+      } catch (error) {
+        Alert.alert("Could not copy report", "Allow clipboard access in your browser and try again.");
+      }
+    };
+    const analyticsMetricValues = LISTING_ANALYTICS_METRICS.map(({ key, label }) => ({ label, value: String(analyticsTotals[key]), sub: "observed increase" }));
+    return <>
+      <View style={styles.infoBanner}>
+        <Text style={styles.infoBannerTitle}>A full picture of your business for any date range</Text>
+        <Text style={styles.infoBannerText}>Choose the first and last day to review. This report gathers saved sales, costs, production, material movement, listing activity, marketplace statistics, and work records. Marketplace totals are entered by you. The stock catalog is shown as it is today; dated history lists the recorded changes during your chosen range.</Text>
+        <View style={styles.analyticsDateRange}>
+          <View style={styles.flex}><Field field={{ label: "Start date", date: true }} value={businessOverviewStart} onChange={setBusinessOverviewStart} /></View>
+          <View style={styles.flex}><Field field={{ label: "End date", date: true }} value={businessOverviewEnd} onChange={setBusinessOverviewEnd} /></View>
+        </View>
+        <Text style={[styles.fieldHint, !validDates && { color: COLORS.red }]}>Report range: {validDates ? dateRangeText : "Enter valid start and end dates."} If the dates are entered in reverse order, the report automatically uses the earlier date first.</Text>
+        <View style={styles.actionRow}><Action label="Copy full report" onPress={copyReport} /><Action label="How to use this report" quiet onPress={() => setHelpOpen(true)} /></View>
+      </View>
+      <View style={styles.metricGrid}>
+        <Metric label="Orders" value={String(periodOrders.length)} sub={`${unitsOrdered} item units`} />
+        <Metric label="Gross sales" value={money(gross, db.currency)} sub={`${money(refunds, db.currency)} refunded`} />
+        <Metric label="Estimated profit" value={money(estimatedProfit, db.currency)} sub="after saved costs and expenses" />
+        <Metric label="Marketplace payouts" value={money(payouts, db.currency)} sub={`${money(fees, db.currency)} fees recorded`} />
+        <Metric label="Made in range" value={String(producedUnits)} sub={`${periodProductions.length} production batches`} />
+        <Metric label="Current active catalog" value={`${activeProducts.length} products · ${activeComponents.length} components`} sub={`${liveListings.length} live listings reserve product stock`} />
+      </View>
+      <View style={styles.sectionHeadingRow}><Text style={styles.sectionTitle}>Money and sales</Text></View>
+      <Card><Text style={styles.cardTitle}>Period financial summary</Text><View style={styles.financeBreakdownRow}><Text style={styles.financeBreakdownLabel}>Gross product sales</Text><Text style={styles.financeBreakdownValue}>{money(gross, db.currency)}</Text></View><View style={styles.financeBreakdownRow}><Text style={styles.financeBreakdownLabel}>Refunds recorded</Text><Text style={styles.financeBreakdownValue}>−{money(refunds, db.currency)}</Text></View><View style={styles.financeBreakdownRow}><Text style={styles.financeBreakdownLabel}>Marketplace fees</Text><Text style={styles.financeBreakdownValue}>−{money(fees, db.currency)}</Text></View><View style={styles.financeBreakdownRow}><Text style={styles.financeBreakdownLabel}>Payouts (actual when entered, otherwise estimated)</Text><Text style={styles.financeBreakdownValue}>{money(payouts, db.currency)}</Text></View><View style={styles.financeBreakdownRow}><Text style={styles.financeBreakdownLabel}>Product material cost on sold units</Text><Text style={styles.financeBreakdownValue}>−{money(materialCosts, db.currency)}</Text></View><View style={styles.financeBreakdownRow}><Text style={styles.financeBreakdownLabel}>Shipping and recorded expenses</Text><Text style={styles.financeBreakdownValue}>−{money(shipping + expenseTotal, db.currency)}</Text></View><View style={styles.financeBreakdownRow}><Text style={styles.financeBreakdownLabel}>Estimated profit</Text><Text style={[styles.financeBreakdownValue, { color: COLORS.wine, fontWeight: "800" }]}>{money(estimatedProfit, db.currency)}</Text></View><View style={styles.financeBreakdownRow}><Text style={styles.financeBreakdownLabel}>Other income · cash after expenses</Text><Text style={styles.financeBreakdownValue}>{money(otherIncome, db.currency)} · {money(cashAfterExpenses, db.currency)}</Text></View><Text style={styles.fieldHint}>The estimate follows the Finances page: saved actual payout when present, otherwise gross less fees and refunds, then shipping, recorded expenses, and saved material cost. Labor and taxes are not included.</Text></Card>
+      <View style={styles.sectionHeadingRow}><Text style={styles.sectionTitle}>Sales by product</Text><Text style={styles.subtle}>{salesRows.length} products sold</Text></View>
+      {salesRows.length ? salesRows.slice(0, 20).map((row, index) => <Card key={row.productId || row.productSku || row.productName} style={styles.historyCard}><View style={styles.cardTop}><View style={styles.flex}><Text style={styles.recordTitle}>{index + 1}. {row.productName}</Text><Text style={styles.recordMeta}>{row.productSku || "SKU not saved"} · {row.units} net units · {money(row.gross, db.currency)} gross line sales · {money(row.materialCost, db.currency)} saved material cost</Text></View></View></Card>) : <Text style={styles.bodyText}>No product sales were recorded during this range.</Text>}
+      {noSaleProducts.length ? <Card><Text style={styles.cardTitle}>Products with no recorded sales in this range</Text>{noSaleProducts.map((item) => <Text key={item.id} style={styles.bodyText}>{item.sku} · {item.name} · {item.archived ? "Archived" : "Active"} · {Number(item.inventory) || 0} finished on hand</Text>)}</Card> : null}
+      <View style={styles.sectionHeadingRow}><Text style={styles.sectionTitle}>Marketplace performance</Text></View>
+      <View style={styles.metricGrid}>{analyticsMetricValues.map((metric) => <Metric key={metric.label} {...metric} />)}</View>
+      <Card><Text style={styles.cardTitle}>Sales channels</Text>{platformSalesLines.length ? platformSalesLines.map((line) => <Text key={line} style={styles.bodyText}>{line}</Text>) : <Text style={styles.bodyText}>No sales were recorded in this range.</Text>}<Text style={[styles.cardTitle, { marginTop: 14 }]}>Marketplace listing analytics</Text><Text style={styles.fieldHint}>Snapshot increases are assigned to the later check. The first check is a baseline. These counts come from marketplace numbers you entered.</Text>{platformAnalyticsLines.length ? platformAnalyticsLines.map((line) => <Text key={line} style={styles.bodyText}>{line}</Text>) : <Text style={styles.bodyText}>No comparable metric increases were recorded in this range.</Text>}</Card>
+      <Card><Text style={styles.cardTitle}>Order details</Text>{orderLines.length ? orderLines.map((line) => <Text key={line} style={styles.bodyText}>{line}</Text>) : <Text style={styles.bodyText}>No orders were recorded during this range.</Text>}</Card>
+      <Card><Text style={styles.cardTitle}>Top listing performers</Text>{topListingLines.length ? topListingLines.map((line) => <Text key={line} style={styles.bodyText}>{line}</Text>) : <Text style={styles.bodyText}>No listing sales or analytics increases were recorded in this range.</Text>}<Text style={[styles.cardTitle, { marginTop: 14 }]}>Order fulfillment statuses</Text><Text style={styles.bodyText}>{orderStatusLines.join(" · ") || "No orders recorded."}</Text></Card>
+      <View style={styles.sectionHeadingRow}><Text style={styles.sectionTitle}>Products, recipes, and production</Text></View>
+      <Card><Text style={styles.cardTitle}>Production in range</Text><Text style={styles.bodyText}>{periodProductions.length} batches · {producedUnits} finished units made · {money(recordedProductionCost, db.currency)} saved batch material cost.</Text><Text style={styles.fieldHint}>Batch cost uses the recipe and component costs saved at the time production was recorded. Per-unit recipe estimates below use today’s recipe and component costs.</Text>{productionLines.map((line) => <Text key={line} style={styles.bodyText}>{line}</Text>)}{!productionLines.length ? <Text style={styles.bodyText}>No production batches in this range.</Text> : null}</Card>
+      <Card><Text style={styles.cardTitle}>Product catalog and current stock</Text><Text style={styles.fieldHint}>Finished stock and estimated recipe cost are current snapshots. “Ready” excludes products reserved by live listings.</Text>{productLines.length ? productLines.map((line) => <Text key={line} style={styles.bodyText}>{line}</Text>) : <Text style={styles.bodyText}>No products saved.</Text>}</Card>
+      <Card><Text style={styles.cardTitle}>Component inventory changes during range</Text>{componentMovementLines.length ? componentMovementLines.map((line) => <Text key={line} style={styles.bodyText}>{line}</Text>) : <Text style={styles.bodyText}>No component stock changes were recorded.</Text>}<Text style={[styles.cardTitle, { marginTop: 14 }]}>Product inventory changes during range</Text>{productMovementLines.length ? productMovementLines.map((line) => <Text key={line} style={styles.bodyText}>{line}</Text>) : <Text style={styles.bodyText}>No product stock changes were recorded.</Text>}</Card>
+      <Card><Text style={styles.cardTitle}>Current component catalog</Text><Text style={styles.fieldHint}>{activeComponents.length} active components · {componentStockUnits} combined units across different measurement units · {money(componentStockValue, db.currency)} current stock value. Counts and costs are today’s snapshot.</Text>{componentLines.length ? componentLines.map((line) => <Text key={line} style={styles.bodyText}>{line}</Text>) : <Text style={styles.bodyText}>No components saved.</Text>}</Card>
+      <Card><Text style={styles.cardTitle}>Component purchases and restocks</Text><Text style={styles.bodyText}>{periodPurchases.length} purchases · {money(periodPurchaseSpend, db.currency)} recorded material and shipping spend.</Text>{purchaseLines.length ? purchaseLines.map((line) => <Text key={line} style={styles.bodyText}>{line}</Text>) : <Text style={styles.bodyText}>No purchases were recorded during this range.</Text>}</Card>
+      <View style={styles.sectionHeadingRow}><Text style={styles.sectionTitle}>Listing lifecycle</Text></View>
+      <Card><Text style={styles.bodyText}>Listings created {periodListings.length} · First listed {periodFirstListings.length} · Relist history entries {periodRelists.length} · Relist plans in range {plannedRelists.length} · Discount plans overlapping range {discounts.length}</Text><Text style={[styles.cardTitle, { marginTop: 12 }]}>Listings created in this range</Text>{createdListingLines.length ? createdListingLines.map((line) => <Text key={line} style={styles.bodyText}>{line}</Text>) : <Text style={styles.bodyText}>No saved creation dates in this range.</Text>}<Text style={[styles.cardTitle, { marginTop: 12 }]}>First listed in this range</Text>{periodFirstListings.map((item) => <Text key={item.id} style={styles.bodyText}>{item.listingSku || "Listing"} · {item.productName} · {dateLabel(item.startDate)} · {listingAnalyticsChannels(item).join(", ") || "No marketplace saved"}</Text>)}{!periodFirstListings.length ? <Text style={styles.bodyText}>No first listing dates in this range.</Text> : null}<Text style={[styles.cardTitle, { marginTop: 12 }]}>Discount plans overlapping this range</Text>{discountLines.length ? discountLines.map((line) => <Text key={line} style={styles.bodyText}>{line}</Text>) : <Text style={styles.bodyText}>No discount plans overlap this range.</Text>}<Text style={[styles.cardTitle, { marginTop: 12 }]}>Relisting history</Text>{relistLines.length ? relistLines.map((line) => <Text key={line} style={styles.bodyText}>{line}</Text>) : <Text style={styles.bodyText}>No relist history was recorded in this range.</Text>}<Text style={[styles.cardTitle, { marginTop: 12 }]}>Planned relist dates</Text>{plannedRelists.length ? plannedRelists.map(({ listing, date }) => <Text key={listing.id} style={styles.bodyText}>{listing.listingSku || "Listing"} · {listing.productName} · {dateLabel(date)} · {listing.relistDone ? "Completed" : "Planned"}</Text>) : <Text style={styles.bodyText}>No planned relist dates fall in this range.</Text>}</Card>
+      <Card><Text style={styles.cardTitle}>Current marketplace listings</Text><Text style={styles.fieldHint}>Current listing status and sales are a snapshot today; the dated sections above show activity in the selected range.</Text>{currentListingLines.length ? currentListingLines.map((line) => <Text key={line} style={styles.bodyText}>{line}</Text>) : <Text style={styles.bodyText}>No listings saved.</Text>}</Card>
+      <View style={styles.sectionHeadingRow}><Text style={styles.sectionTitle}>Other business activity</Text></View>
+      <Card><Text style={styles.cardTitle}>Income and expenses</Text><Text style={styles.bodyText}>Other income {money(otherIncome, db.currency)} · Out of pocket {money(outOfPocketExpenses, db.currency)} · Deducted from sales payouts {money(salesDeductionExpenses, db.currency)}</Text>{incomeLines.map((line) => <Text key={line} style={styles.bodyText}>{line}</Text>)}{expenseLines.map((line) => <Text key={line} style={styles.bodyText}>{line}</Text>)}{!incomeLines.length && !expenseLines.length ? <Text style={styles.bodyText}>No additional income or expenses were recorded.</Text> : null}</Card>
+      <Card><Text style={styles.cardTitle}>Reviews</Text><Text style={styles.bodyText}>{periodReviews.length} reviews · {periodReviews.length ? averageReview.toFixed(1) + "/5 average rating" : "No reviews recorded in this range"}</Text>{reviewLines.map((line) => <Text key={line} style={styles.bodyText}>{line}</Text>)}</Card>
+      <Card><Text style={styles.cardTitle}>Tracked work and schedule</Text><Text style={styles.bodyText}>{formatDuration(trackedHours)} tracked across {periodTimeSessions.length + periodTimerSessions.length} sessions · {periodTasks.length} tasks due · {periodEvents.length} calendar events · {periodWorkPlans.length} planned work blocks.</Text>{workLines.map((line) => <Text key={line} style={styles.bodyText}>{line}</Text>)}{workPlanLines.map((line) => <Text key={line} style={styles.bodyText}>{line}</Text>)}{periodTasks.map((item) => <Text key={item.id} style={styles.bodyText}>Task · {item.title || item.name} · {item.done ? "Done" : "Open"} · due {dateLabel(item.dueDate || item.date)}</Text>)}{periodEvents.map((item) => <Text key={item.id} style={styles.bodyText}>Event · {item.title || item.name} · {dateLabel(item.date)} · {item.done ? "Done" : "Open"}</Text>)}</Card>
+      <View style={styles.infoBanner}><Text style={styles.infoBannerTitle}>How to interpret this report</Text><Text style={styles.infoBannerText}>This report only includes records saved in GRIMMS. Marketplace analytics are manual snapshots; increases are assigned to the later check, and the first snapshot is a baseline. Product and component stock plus current recipe costs are today’s snapshot, while inventory history and production batches show dated activity. Estimated profit uses the saved payout when entered or an estimate from gross sales less fees and refunds, then subtracts saved shipping, expenses, and product material costs. It excludes labor, taxes, and costs or sales you have not entered. Other income is shown separately and included in cash after expenses.</Text><View style={styles.actionRow}><Action label="Copy full report" onPress={copyReport} /></View></View>
+    </>;
+  };
+
   const renderListingAnalytics = () => {
     const metricSpecs = LISTING_ANALYTICS_METRICS;
     const allListings = db.listings || [];
@@ -6378,6 +6698,7 @@ export default function App() {
       case "Products": return renderProducts();
       case "Production": return renderProduction();
       case "Listings": return renderListings();
+      case "Business Overview": return renderBusinessOverview();
       case "Listing Analytics": return renderListingAnalytics();
       case "Orders": return renderOrders();
       case "Reviews": return renderReviews();
@@ -6457,10 +6778,10 @@ export default function App() {
       <View style={[styles.appBody, wideLayout && styles.appBodyWide]}>
       {wideLayout ? <View style={styles.sidebar}><ScrollView style={styles.sidebarScroll} contentContainerStyle={styles.sidebarContent} showsVerticalScrollIndicator={false}>{renderNavigationLinks()}</ScrollView><View style={styles.sidebarFooter}>{renderSettingsShortcut()}</View></View> : null}
       <View style={styles.contentPane}>
-      {screen !== "More" && screen !== "Dashboard" && screen !== "Settings" && screen !== "Help & FAQ" && (
+      {screen !== "More" && screen !== "Dashboard" && screen !== "Settings" && screen !== "Help & FAQ" && screen !== "Business Overview" && (
         <View style={styles.searchWrap}><AppIcon name="search" size={17} color={COLORS.muted} /><TextInput value={search} onChangeText={setSearch} placeholder={screen === "Notes" ? "Search notes, plans, diary entries, tags…" : "Search " + (isFulfillmentPage ? "products" : screen.toLowerCase())} placeholderTextColor={COLORS.placeholder} style={styles.searchInput} returnKeyType="search" /><Pressable onPress={() => setSearch("")}><Text style={styles.searchClear}>×</Text></Pressable></View>
       )}
-      <View style={styles.screenHeading}><View style={styles.flex}><Text style={styles.screenTitle}>{screenTitle}</Text>{screen !== "Dashboard" ? <Text style={styles.screenSubtitle}>{isFulfillmentPage ? "Products in this fulfillment status" : screen === "Production" ? "Turn materials into finished inventory" : screen === "Time" ? "Clock shifts, connect tasks and projects, and review your hours" : screen === "Ideas" ? "Save and move product ideas through your work" : screen === "Notes" ? "Research, plans, diary entries, and business notes" : screen === "Listing Analytics" ? "Record marketplace stats and review performance" : screen === "Help & FAQ" ? "Instructions and answers for your business tools" : "A clear view of your handmade business"}</Text> : <Text style={styles.screenSubtitle}>Your handmade business, in one place</Text>}</View>
+      <View style={styles.screenHeading}><View style={styles.flex}><Text style={styles.screenTitle}>{screenTitle}</Text>{screen !== "Dashboard" ? <Text style={styles.screenSubtitle}>{isFulfillmentPage ? "Products in this fulfillment status" : screen === "Production" ? "Turn materials into finished inventory" : screen === "Time" ? "Clock shifts, connect tasks and projects, and review your hours" : screen === "Ideas" ? "Save and move product ideas through your work" : screen === "Notes" ? "Research, plans, diary entries, and business notes" : screen === "Business Overview" ? "Explore a detailed record of your business for any chosen date range" : screen === "Listing Analytics" ? "Record marketplace stats and review performance" : screen === "Help & FAQ" ? "Instructions and answers for your business tools" : "A clear view of your handmade business"}</Text> : <Text style={styles.screenSubtitle}>Your handmade business, in one place</Text>}</View>
         <View style={styles.headerActions}>
           {navigationStack.length > 1 ? <Pressable accessibilityRole="button" accessibilityLabel="Go back" style={styles.headerAdd} onPress={navigateBack}><Text style={styles.headerAddText}>‹ Back</Text></Pressable> : null}
           <Pressable accessibilityRole="button" accessibilityLabel={"Needs attention" + (pageAttentionItems.length ? ", " + pageAttentionItems.length + " items on this page" : ", none on this page")} style={[styles.mailboxButton, { width: "auto", height: 34, flexDirection: "row", gap: 5, paddingHorizontal: 8 }]} onPress={() => setAttentionOpen(true)}>
