@@ -1141,7 +1141,7 @@ const FORM_INTRO = {
 };
 
 const FIELD_GROUPS = [
-  { title: "Start here", description: "Name the record and connect it to the right item.", keys: ["name", "title", "description", "productId", "componentId", "orderId", "customer", "contact", "website"] },
+  { title: "Start here", description: "Name the record and connect it to the right item.", keys: ["name", "title", "description", "productId", "listingNameOverride", "descriptionSource", "componentId", "orderId", "customer", "contact", "website"] },
   { title: "Price, stock, and shipping", description: "Amounts help the tracker estimate stock, costs, and shipping.", keys: ["quantity", "inventory", "lowStock", "unit", "cost", "purchaseCost", "shippingCost", "price", "unitPrice", "extraFees", "packageWeight", "packageWeightUnit", "amount", "stars"] },
   { title: "Item and sale details", description: "Add the details you will want to see while working or selling.", keys: ["category", "expenseType", "colors", "materials", "sizes", "gender", "condition", "listingSku", "orderSku", "trackingNumber", "trackingCarrier", "marketplaces", "marketplace", "status", "paymentMethod", "shippingMethod", "priority", "kind", "percent", "startTime", "endTime", "date", "dueDate", "startDate", "relistDate", "endDate"] },
   { title: "Notes and links", description: "Keep the useful context close to this record.", keys: ["notes", "body", "tags", "reviewText", "publicResponse", "url", "trackingUrl"] },
@@ -1298,7 +1298,7 @@ function Field({ field, value, onChange, onManageOptions }) {
                 </Pressable>
               );
               })}
-              {field.searchable && !visibleOptions.length ? <Text style={styles.fieldHint}>No matches. Try another search.</Text> : null}
+              {field.searchable && !visibleOptions.length ? <Text style={styles.fieldHint}>{field.emptyMessage || "No matches. Try another search."}</Text> : null}
               {field.allowBlank && (
                 <Pressable style={styles.optionItem} onPress={() => { onChange(""); setExpanded(false); }}>
                   <Text style={styles.optionText}>None</Text>
@@ -1822,8 +1822,20 @@ function RecordModal({ visible, type, record, db, prefill, onClose, onSave, onMa
   const optionsFor = (key) => (db.dropdownOptions && db.dropdownOptions[key] || DEFAULT_DROPDOWN_OPTIONS[key] || []).map((value) => ({ label: value, value }));
   const supplierOptions = (db.suppliers || []).filter(active).map((item) => ({ label: item.name, value: item.name }));
   const currentOrderProductId = type === "order" && record && record.items && record.items[0] ? record.items[0].productId : "";
-  const currentListingProductId = type === "listing" && record ? record.productId : "";
+  const currentListingProductId = type === "listing" ? (record && record.productId || prefill && prefill.productId || "") : "";
+  const [listingProductInventoryFilter, setListingProductInventoryFilter] = useState("inStock");
+  const [listingProductCategoryFilter, setListingProductCategoryFilter] = useState("All");
+  const selectableProducts = (db.products || []).filter((p) => active(p) || p.id === currentOrderProductId || p.id === currentListingProductId);
   const productOptions = (db.products || []).filter((p) => active(p) || p.id === currentOrderProductId || p.id === currentListingProductId).map((p) => ({ label: p.name + " (" + p.sku + ") · " + (Math.max(0, Number(p.inventory) || 0)) + " available" + (p.archived ? " · archived" : ""), value: p.id }));
+  const listingProductCategories = Array.from(new Set(selectableProducts.map((product) => product.category || "Other"))).sort((a, b) => a.localeCompare(b));
+  const listingProductOptions = selectableProducts.filter((product) => {
+    if (product.id === currentListingProductId) return true;
+    if (listingProductCategoryFilter !== "All" && (product.category || "Other") !== listingProductCategoryFilter) return false;
+    const inventory = Math.max(0, Number(product.inventory) || 0);
+    if (listingProductInventoryFilter === "inStock") return inventory > 0;
+    if (listingProductInventoryFilter === "outOfStock") return inventory <= 0;
+    return true;
+  }).map((product) => ({ label: product.name + " (" + product.sku + ") · " + (Math.max(0, Number(product.inventory) || 0)) + " available" + (product.id === currentListingProductId && !(Number(product.inventory) > 0) ? " · currently linked" : "") + (product.archived ? " · archived" : ""), value: product.id }));
   const orderOptions = (db.orders || []).map((order) => ({ label: [order.orderSku, (order.items || []).map((item) => [item.productName, item.productSku, item.listingName, item.listingSku].filter(Boolean).join(" ").trim()).join(", "), order.customer, dateLabel(order.date)].filter(Boolean).join(" · "), value: order.id }));
   const fieldsByType = {
     component: [
@@ -1866,7 +1878,7 @@ function RecordModal({ visible, type, record, db, prefill, onClose, onSave, onMa
       { key: "packageWeightUnit", label: "Package weight unit", options: WEIGHT_UNITS },
     ],
     listing: [
-      { key: "productId", label: "Product", options: productOptions, searchable: true, searchPlaceholder: "Search products", required: true, placeholder: "Choose a product" },
+      { key: "productId", label: "Product", options: listingProductOptions, searchable: true, searchPlaceholder: "Search products by name or SKU", emptyMessage: "No products match these filters. Try All active, change category, or add a product.", required: true, placeholder: "Choose a product" },
       { key: "listingNameOverride", label: "Listing name (optional override)", placeholder: "Leave blank to use the product name", hint: "A custom title here applies only to this marketplace listing. Leave it blank to follow future product name changes." },
       { key: "listingSku", label: "Listing SKU", required: true, placeholder: "Example: LIST-001" },
       { key: "marketplaces", label: "Sales channels (choose all that apply)", optionSet: "marketplaces", options: optionsFor("marketplaces"), multiple: true, required: true, placeholder: "Choose one or more channels" },
@@ -1997,6 +2009,8 @@ function RecordModal({ visible, type, record, db, prefill, onClose, onSave, onMa
   useEffect(() => {
     const initial = JSON.parse(initialValuesJson);
     setValues({ ...createFormDefaults(initial.type, initial.record, initial.defaultLowStock, initial), ...(initial.prefill || {}) });
+    setListingProductInventoryFilter("inStock");
+    setListingProductCategoryFilter("All");
     setError("");
     setSubmitting(false);
     submitLock.current = false;
@@ -2055,6 +2069,12 @@ function RecordModal({ visible, type, record, db, prefill, onClose, onSave, onMa
         <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === "ios" ? "padding" : "height"}>
         <ScrollView contentContainerStyle={styles.formContent} keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag">
           <View style={styles.formHero}><Text style={styles.formHeroEyebrow}>{record ? "UPDATE YOUR RECORD" : "ADD SOMETHING NEW"}</Text><Text style={styles.formHeroTitle}>{record ? "Edit " : "Create "}{typeLabels[type] || "Record"}</Text><Text style={styles.formHeroText}>{FORM_INTRO[type] || "Add the details you want to keep with this record. You can come back and edit it anytime."}</Text></View>
+          {type === "listing" ? <View style={styles.formSection}>
+            <View style={styles.formSectionHeading}><View style={styles.formSectionMark} /><View style={styles.flex}><Text style={styles.formSectionTitle}>Find the product</Text><Text style={styles.formSectionText}>Filter the product picker by stock and category, then search by name or SKU.</Text></View></View>
+            <ChoiceChips label="Product stock" options={[{ label: "In stock", value: "inStock" }, { label: "All active", value: "all" }, { label: "Out of stock", value: "outOfStock" }]} value={listingProductInventoryFilter} onChange={setListingProductInventoryFilter} />
+            <ChoiceChips label="Product category" options={["All", ...listingProductCategories]} value={listingProductCategoryFilter} onChange={setListingProductCategoryFilter} />
+            {currentListingProductId ? <Text style={styles.fieldHint}>The currently linked product stays in the list even if it is out of stock or archived.</Text> : null}
+          </View> : null}
           {formSections.map((section) => <View key={section.title} style={styles.formSection}>
             <View style={styles.formSectionHeading}><View style={styles.formSectionMark} /><View style={styles.flex}><Text style={styles.formSectionTitle}>{section.title}</Text><Text style={styles.formSectionText}>{section.description}</Text></View></View>
           {section.fields.map((field) => (
@@ -2888,6 +2908,33 @@ export default function App() {
     const updated = recipe(old);
     return updated && updated !== old ? updated : updated || old;
   });
+  const attentionDismissals = db.dashboardDismissedAttention || [];
+  const currentAttentionItems = attentionInboxItems.filter((item) => !attentionDismissals.some((dismissed) => dismissed.id === item.id));
+  const attentionScopeScreen = screen.startsWith("Fulfillment:") ? "Orders" : screen;
+  const pageAttentionItems = screen === "Dashboard" ? currentAttentionItems : currentAttentionItems.filter((item) => item.screen === attentionScopeScreen);
+  const pageDismissedAttentionItems = attentionDismissals.slice().reverse().map((dismissed) => ({
+    dismissed,
+    item: dismissed.item || attentionInboxItems.find((item) => item.id === dismissed.id) || null,
+  })).filter(({ item }) => screen === "Dashboard" || item && item.screen === attentionScopeScreen);
+  const dismissAttentionItem = (item) => setData((old) => {
+    const previous = old.dashboardDismissedAttention || [];
+    if (previous.some((dismissed) => dismissed.id === item.id)) return old;
+    return { ...old, dashboardDismissedAttention: previous.concat([{ id: item.id, date: TODAY, item }]) };
+  });
+  const dismissAttentionItems = (items) => setData((old) => {
+    const previous = old.dashboardDismissedAttention || [];
+    const alreadyDismissed = new Set(previous.map((entry) => entry.id));
+    const next = (items || []).filter((item) => !alreadyDismissed.has(item.id)).map((item) => ({ id: item.id, date: TODAY, item }));
+    return next.length ? { ...old, dashboardDismissedAttention: previous.concat(next) } : old;
+  });
+  const restoreAttentionItem = (id) => setData((old) => ({ ...old, dashboardDismissedAttention: (old.dashboardDismissedAttention || []).filter((entry) => entry.id !== id) }));
+  const restoreAttentionItems = (items) => {
+    const ids = new Set((items || []).map((entry) => entry.dismissed.id));
+    setData((old) => {
+      const next = (old.dashboardDismissedAttention || []).filter((entry) => !ids.has(entry.id));
+      return next.length === (old.dashboardDismissedAttention || []).length ? old : { ...old, dashboardDismissedAttention: next };
+    });
+  };
   const saveBulkEdits = (type, drafts) => {
     const draftById = new Map((drafts || []).map((row) => [row.id, row]));
     setData((old) => {
@@ -4452,30 +4499,9 @@ export default function App() {
       }
       setDashboardAnchor(localDateKey(date));
     };
-    const allAttentionItems = [
-      ...lowStock.map((item) => ({ id: "component:" + item.id, icon: "◈", title: item.name + " is low", detail: "Only " + item.quantity + " " + (item.unit || "pieces") + " on hand · alert at " + item.lowStock, screen: "Components" })),
-      ...orderNeedsAttention.map((item) => ({ id: "order:" + item.id, icon: "▣", title: (item.orderSku || "Sale") + " needs attention", detail: (item.items || []).map((line) => line.productName + " × " + line.quantity).join(", ") + " · " + (item.status || "Status not set") + " · " + dateLabel(item.date), screen: "Orders" })),
-      ...overdueTasks.map((item) => ({ id: "task:" + item.id, icon: "✓", title: "Overdue: " + item.title, detail: (item.category || "Task") + " · Due " + dateLabel(item.dueDate) + (item.notes ? " · " + item.notes : ""), screen: "Calendar" })),
-      ...soldListingsNeedArchive.map((item) => ({ id: "listing:" + item.id, icon: "▤", title: item.productName + " sold out", detail: (item.listingSku || "Listing SKU") + " · archive the listing or relist after making more stock", screen: "Listings" })),
-      ...listingsNeedingDescriptionReview.map((listing) => ({ id: "listing-description:" + listing.id, icon: "▤", title: listing.descriptionSource === "product" ? "Product description changed · " + listing.productName : "Review listing description · " + listing.productName, detail: listing.descriptionSource === "product" ? "The product description changed since you copied it. Review the listing and update the marketplace copy when you are ready." : "This listing and its linked product have different descriptions. Review them and copy the product text if you want them to match.", screen: "Listings" })),
-    ];
-    const savedDismissals = db.dashboardDismissedAttention || [];
-    const attentionItems = allAttentionItems.filter((item) => !savedDismissals.some((dismissed) => dismissed.id === item.id));
-    const dismissedAttentionItems = savedDismissals.slice().reverse().map((dismissed) => ({ dismissed, item: dismissed.item || allAttentionItems.find((item) => item.id === dismissed.id) || null }));
-    const dismissAttention = (item) => setData((old) => {
-      const previous = old.dashboardDismissedAttention || [];
-      if (previous.some((dismissed) => dismissed.id === item.id)) return old;
-      return { ...old, dashboardDismissedAttention: previous.concat([{ id: item.id, date: TODAY, item }]) };
-    });
-    const dismissAllAttention = () => setData((old) => {
-      const previous = old.dashboardDismissedAttention || [];
-      const alreadyDismissed = new Set(previous.map((entry) => entry.id));
-      const nextDismissals = attentionItems.filter((item) => !alreadyDismissed.has(item.id)).map((item) => ({ id: item.id, date: TODAY, item }));
-      return nextDismissals.length ? { ...old, dashboardDismissedAttention: previous.concat(nextDismissals) } : old;
-    });
-    const restoreAllAttention = () => setData((old) => old.dashboardDismissedAttention && old.dashboardDismissedAttention.length
-      ? { ...old, dashboardDismissedAttention: [] }
-      : old);
+    const allAttentionItems = attentionInboxItems;
+    const attentionItems = currentAttentionItems;
+    const dismissedAttentionItems = pageDismissedAttentionItems;
     const widgetContent = {
       welcome: (
         <View style={styles.welcomeBox}>
@@ -4541,10 +4567,10 @@ export default function App() {
       ),
       attention: (
         <>
-          <View style={styles.sectionHeadingRow}><View style={styles.flex}><Text style={styles.sectionTitle}>Needs your attention</Text><Text style={styles.subtle}>{attentionItems.length} open</Text></View>{attentionItems.length ? <Action label="Dismiss all" quiet onPress={dismissAllAttention} /> : null}</View>
+          <View style={styles.sectionHeadingRow}><View style={styles.flex}><Text style={styles.sectionTitle}>Needs your attention</Text><Text style={styles.subtle}>{attentionItems.length} open</Text></View>{attentionItems.length ? <Action label="Dismiss all" quiet onPress={() => dismissAttentionItems(attentionItems)} /> : null}</View>
           {attentionItems.length === 0 ? <Card><Text style={styles.emptyTitle}>Nothing urgent right now</Text><Text style={styles.bodyText}>There are no open inventory, order, listing, or task alerts today.</Text></Card> : attentionItems.map((item) => {
             const expanded = expandedDashboardAttention.includes(item.id);
-            return <Card key={item.id}><View style={styles.cardTop}><Pressable style={styles.flex} onPress={() => setExpandedDashboardAttention((old) => old.includes(item.id) ? [] : [item.id])}><Text style={styles.recordTitle}>{item.icon}  {item.title}</Text>{expanded ? <Text style={styles.bodyText}>{item.detail}</Text> : <Text style={styles.recordMeta}>Tap to see details</Text>}</Pressable><View style={{ alignItems: "flex-end", gap: 6 }}><Action label="Open" quiet onPress={() => navigateToScreen(item.screen)} /><Pressable onPress={() => dismissAttention(item)}><Text style={styles.deleteOptionText}>Dismiss</Text></Pressable></View></View></Card>;
+            return <Card key={item.id}><View style={styles.cardTop}><Pressable style={styles.flex} onPress={() => setExpandedDashboardAttention((old) => old.includes(item.id) ? [] : [item.id])}><Text style={styles.recordTitle}>{item.icon}  {item.title}</Text>{expanded ? <Text style={styles.bodyText}>{item.detail}</Text> : <Text style={styles.recordMeta}>Tap to see details</Text>}</Pressable><View style={{ alignItems: "flex-end", gap: 6 }}><Action label="Open" quiet onPress={() => navigateToScreen(item.screen)} /><Pressable onPress={() => dismissAttentionItem(item)}><Text style={styles.deleteOptionText}>Dismiss</Text></Pressable></View></View></Card>;
           })}
         </>
       ),
@@ -4597,8 +4623,8 @@ export default function App() {
       {!hiddenWidgets.includes("welcome") ? <React.Fragment key="welcome">{widgetContent.welcome}</React.Fragment> : null}
       {widgetContent.fulfillment}
       {widgetOrder.filter((id) => id !== "welcome" && id !== "fulfillment" && !hiddenWidgets.includes(id)).map((id) => <React.Fragment key={id}>{widgetContent[id]}</React.Fragment>)}
-      <View style={styles.sectionHeadingRow}><Text style={styles.sectionTitle}>Dismissed alerts</Text><View style={styles.actionRow}>{dismissedAttentionItems.length ? <Action label="Restore all" quiet onPress={restoreAllAttention} /> : null}<Action label={showDismissedAttention ? "Hide dismissed" : `See dismissed (${dismissedAttentionItems.length})`} quiet onPress={() => setShowDismissedAttention(!showDismissedAttention)} /></View></View>
-        {showDismissedAttention ? dismissedAttentionItems.length ? dismissedAttentionItems.map((item) => <Card key={item.dismissed.id + item.dismissed.date}><View style={styles.cardTop}><View style={styles.flex}><Text style={styles.recordTitle}>{item.item ? `${item.item.icon}  ${item.item.title}` : item.dismissed.id}</Text><Text style={styles.recordMeta}>Dismissed {dateLabel(item.dismissed.date)}</Text>{item.item ? <Text style={styles.bodyText}>{item.item.detail}</Text> : null}</View><Action label="Restore alert" onPress={() => setData((old) => ({ ...old, dashboardDismissedAttention: (old.dashboardDismissedAttention || []).filter((entry) => entry.id !== item.dismissed.id) }))} /></View></Card>) : <Text style={styles.bodyText}>There are no dismissed alerts to restore.</Text> : null}
+      <View style={styles.sectionHeadingRow}><Text style={styles.sectionTitle}>Dismissed alerts</Text><View style={styles.actionRow}>{dismissedAttentionItems.length ? <Action label="Restore all" quiet onPress={() => restoreAttentionItems(dismissedAttentionItems)} /> : null}<Action label={showDismissedAttention ? "Hide dismissed" : `See dismissed (${dismissedAttentionItems.length})`} quiet onPress={() => setShowDismissedAttention(!showDismissedAttention)} /></View></View>
+        {showDismissedAttention ? dismissedAttentionItems.length ? dismissedAttentionItems.map((item) => <Card key={item.dismissed.id + item.dismissed.date}><View style={styles.cardTop}><View style={styles.flex}><Text style={styles.recordTitle}>{item.item ? `${item.item.icon}  ${item.item.title}` : item.dismissed.id}</Text><Text style={styles.recordMeta}>Dismissed {dateLabel(item.dismissed.date)}</Text>{item.item ? <Text style={styles.bodyText}>{item.item.detail}</Text> : null}</View><Action label="Restore alert" onPress={() => restoreAttentionItem(item.dismissed.id)} /></View></Card>) : <Text style={styles.bodyText}>There are no dismissed alerts to restore.</Text> : null}
     </>;
   };
   const renderComponents = () => {
@@ -6131,9 +6157,9 @@ export default function App() {
       <View style={styles.screenHeading}><View style={styles.flex}><Text style={styles.screenTitle}>{screenTitle}</Text>{screen !== "Dashboard" ? <Text style={styles.screenSubtitle}>{isFulfillmentPage ? "Products in this fulfillment status" : screen === "Production" ? "Turn materials into finished inventory" : screen === "Time" ? "Clock shifts, connect tasks and projects, and review your hours" : screen === "Ideas" ? "Save and move product ideas through your work" : screen === "Notes" ? "Research, plans, diary entries, and business notes" : screen === "Listing Analytics" ? "Record marketplace stats and review performance" : screen === "Help & FAQ" ? "Instructions and answers for your business tools" : "A clear view of your handmade business"}</Text> : <Text style={styles.screenSubtitle}>Your handmade business, in one place</Text>}</View>
         <View style={styles.headerActions}>
           {navigationStack.length > 1 ? <Pressable accessibilityRole="button" accessibilityLabel="Go back" style={styles.headerAdd} onPress={navigateBack}><Text style={styles.headerAddText}>‹ Back</Text></Pressable> : null}
-          <Pressable accessibilityRole="button" accessibilityLabel={"Needs attention" + (attentionInboxItems.length ? ", " + attentionInboxItems.length + " items" : ", all clear")} style={[styles.mailboxButton, { width: "auto", height: 34, flexDirection: "row", gap: 5, paddingHorizontal: 8 }]} onPress={() => setAttentionOpen(true)}>
-            <AppIcon name="mail" size={15} color={attentionInboxItems.length ? COLORS.red : COLORS.muted} />
-            <Text style={{ color: attentionInboxItems.length ? COLORS.red : COLORS.muted, fontSize: 10, fontWeight: "700" }}>Attention · {attentionInboxItems.length}</Text>
+          <Pressable accessibilityRole="button" accessibilityLabel={"Needs attention" + (pageAttentionItems.length ? ", " + pageAttentionItems.length + " items on this page" : ", none on this page")} style={[styles.mailboxButton, { width: "auto", height: 34, flexDirection: "row", gap: 5, paddingHorizontal: 8 }]} onPress={() => setAttentionOpen(true)}>
+            <AppIcon name="mail" size={15} color={pageAttentionItems.length ? COLORS.red : COLORS.muted} />
+            <Text style={{ color: pageAttentionItems.length ? COLORS.red : COLORS.muted, fontSize: 10, fontWeight: "700" }}>Attention · {pageAttentionItems.length}</Text>
           </Pressable>
           <Pressable accessibilityLabel={screenTitle + " help"} style={styles.helpButton} onPress={() => setHelpOpen(true)}><AppIcon name="help" size={17} color={COLORS.wine} /></Pressable>
         </View>
@@ -6165,12 +6191,16 @@ export default function App() {
             <View style={styles.announcementHeader}>
               <View style={styles.flex}>
                 <Text style={styles.announcementTitle}>Needs attention</Text>
-                <Text style={styles.announcementSubtitle}>{attentionInboxItems.length ? attentionInboxItems.length + " item" + (attentionInboxItems.length === 1 ? "" : "s") + " to review" : "Everything is up to date"}</Text>
+                <Text style={styles.announcementSubtitle}>{pageAttentionItems.length ? pageAttentionItems.length + " open on " + (screen === "Dashboard" ? "all pages" : attentionScopeScreen) : "No open items on " + (screen === "Dashboard" ? "any page" : attentionScopeScreen)}</Text>
               </View>
               <Pressable accessibilityRole="button" onPress={() => setAttentionOpen(false)} style={styles.announcementClose}><Text style={styles.modalCancel}>Close</Text></Pressable>
             </View>
             <ScrollView style={styles.announcementList} contentContainerStyle={styles.announcementListContent}>
-              {attentionInboxItems.length ? attentionInboxItems.map((item) => <View key={item.id} style={styles.announcementMessage}>
+              <View style={styles.actionRow}>
+                {pageAttentionItems.length ? <Action label={screen === "Dashboard" ? "Dismiss all" : "Dismiss all on this page"} quiet onPress={() => dismissAttentionItems(pageAttentionItems)} /> : null}
+                {pageDismissedAttentionItems.length ? <Action label="Restore all dismissed" quiet onPress={() => restoreAttentionItems(pageDismissedAttentionItems)} /> : null}
+              </View>
+              {pageAttentionItems.length ? pageAttentionItems.map((item) => <View key={item.id} style={styles.announcementMessage}>
                 <View style={styles.announcementMessageTop}><Text style={styles.announcementMessageTitle}>{item.title}</Text><Text style={styles.announcementReadLabel}>{item.screen}</Text></View>
                 <Text style={styles.bodyText}>{item.detail}</Text>
                 <View style={styles.announcementMessageActions}><Pressable accessibilityRole="button" onPress={() => {
@@ -6180,8 +6210,16 @@ export default function App() {
                   if (item.screen === "Components") setShowArchivedComponents(false);
                   if (item.date) { const date = new Date(item.date + "T12:00:00"); setCalendarMonth(new Date(date.getFullYear(), date.getMonth(), 1)); setSelectedDay(item.date); }
                   navigateRoot(item.screen);
-                }} style={styles.announcementReadAction}><Text style={styles.announcementMarkAllText}>Open {item.screen}</Text></Pressable></View>
-              </View>) : <Text style={styles.bodyText}>There are no low-stock materials, overdue tasks, open orders, sold-out listings, or changed product descriptions to review right now.</Text>}
+                }} style={styles.announcementReadAction}><Text style={styles.announcementMarkAllText}>Open {item.screen}</Text></Pressable><Pressable accessibilityRole="button" onPress={() => dismissAttentionItem(item)} style={styles.announcementReadAction}><Text style={styles.announcementMarkAllText}>Dismiss</Text></Pressable></View>
+              </View>) : <Text style={styles.bodyText}>There are no open items to review on {screen === "Dashboard" ? "any page" : attentionScopeScreen}.</Text>}
+              {pageDismissedAttentionItems.length ? <>
+                <Text style={styles.sectionTitle}>Dismissed</Text>
+                {pageDismissedAttentionItems.map((entry) => <View key={entry.dismissed.id + entry.dismissed.date} style={styles.announcementMessage}>
+                  <View style={styles.announcementMessageTop}><Text style={styles.announcementMessageTitle}>{entry.item ? entry.item.title : entry.dismissed.id}</Text><Text style={styles.announcementReadLabel}>Dismissed {dateLabel(entry.dismissed.date)}</Text></View>
+                  {entry.item ? <Text style={styles.bodyText}>{entry.item.detail}</Text> : null}
+                  <View style={styles.announcementMessageActions}><Pressable accessibilityRole="button" onPress={() => restoreAttentionItem(entry.dismissed.id)} style={styles.announcementReadAction}><Text style={styles.announcementMarkAllText}>Restore</Text></Pressable></View>
+                </View>)}
+              </> : null}
             </ScrollView>
             <Text style={styles.announcementFootnote}>Open an item to go straight to the page where you can review and fix it.</Text>
           </SafeAreaView>
