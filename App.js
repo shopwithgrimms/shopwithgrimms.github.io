@@ -889,6 +889,7 @@ const SORT_OPTIONS = [
   { label: "Price low to high", value: "priceAsc" },
   { label: "Price high to low", value: "priceDesc" },
 ];
+const LISTING_SORT_OPTIONS = SORT_OPTIONS.concat([{ label: "Product SKU low to high", value: "productSkuAsc" }]);
 const sortableDate = (value) => {
   if (!value) return 0;
   const text = String(value);
@@ -912,6 +913,7 @@ const sortRecords = (records, mode) => records.slice().sort((a, b) => {
   if (mode === "nameDesc") return bName.localeCompare(aName);
   if (mode === "priceAsc") return aPrice - bPrice;
   if (mode === "priceDesc") return bPrice - aPrice;
+  if (mode === "productSkuAsc") return String(a.productSku || a.sku || "").localeCompare(String(b.productSku || b.sku || ""), undefined, { numeric: true, sensitivity: "base" }) || aName.localeCompare(bName);
   return bDate - aDate;
 });
 const currentRecipeCost = (product, components) => (product.recipe || []).reduce((sum, part) => {
@@ -1385,8 +1387,8 @@ function Field({ field, value, onChange, onManageOptions }) {
   );
 }
 
-function SortControl({ value, onChange }) {
-  return <Field field={{ label: "Sort by", options: SORT_OPTIONS }} value={value || "newest"} onChange={onChange} />;
+function SortControl({ value, onChange, options = SORT_OPTIONS }) {
+  return <Field field={{ label: "Sort by", options }} value={value || "newest"} onChange={onChange} />;
 }
 
 function ChoiceChips({ label, options, value, onChange }) {
@@ -2254,6 +2256,113 @@ function BulkEditModal({ visible, type, records = [], products = [], onClose, on
   </Modal>;
 }
 
+function BulkCreateListingsModal({ visible, products = [], listings = [], marketplaceOptions = [], currency, onClose, onSave }) {
+  const [selectedProductIds, setSelectedProductIds] = useState([]);
+  const [dateMode, setDateMode] = useState("same");
+  const [sharedDate, setSharedDate] = useState(TODAY);
+  const [productDates, setProductDates] = useState({});
+  const [priceOverrides, setPriceOverrides] = useState({});
+  const [selectedMarketplaces, setSelectedMarketplaces] = useState([]);
+  const [search, setSearch] = useState("");
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    if (!visible) return;
+    setSelectedProductIds([]);
+    setDateMode("same");
+    setSharedDate(TODAY);
+    setProductDates({});
+    setPriceOverrides({});
+    setSelectedMarketplaces([]);
+    setSearch("");
+    setError("");
+  }, [visible]);
+
+  const availableProducts = (products || []).filter((product) => active(product) && productAvailableUnits(product, listings) > 0).slice().sort((a, b) =>
+    String(a.sku || "").localeCompare(String(b.sku || ""), undefined, { numeric: true, sensitivity: "base" }) || String(a.name || "").localeCompare(String(b.name || ""))
+  );
+  const visibleProducts = availableProducts.filter((product) => !search.trim() || [product.name, product.sku].join(" ").toLowerCase().includes(search.trim().toLowerCase()));
+  const selectedProducts = availableProducts.filter((product) => selectedProductIds.includes(product.id));
+  const toggleProduct = (productId) => setSelectedProductIds((old) => old.includes(productId) ? old.filter((id) => id !== productId) : old.concat([productId]));
+
+  const submit = () => {
+    setError("");
+    if (!selectedProducts.length) { setError("Select at least one active product with finished stock ready to list."); return; }
+    if (!selectedMarketplaces.length) { setError("Choose at least one sales channel for these listings."); return; }
+    const rows = selectedProducts.map((product) => {
+      const dateValue = dateMode === "same" ? sharedDate : productDates[product.id] || sharedDate;
+      const startDate = parseDateInput(dateValue);
+      if (!startDate || !/^\d{4}-\d{2}-\d{2}$/.test(startDate)) return { error: "Choose a valid listing date for " + product.name + "." };
+      const priceText = String(priceOverrides[product.id] == null ? "" : priceOverrides[product.id]).trim();
+      const price = priceText ? Number(priceText.replace(/[$,]/g, "")) : Number(product.price);
+      if (!Number.isFinite(price) || price < 0) return { error: "Enter a valid price of zero or more for " + product.name + "." };
+      return { productId: product.id, startDate, price };
+    });
+    const invalidRow = rows.find((row) => row.error);
+    if (invalidRow) { setError(invalidRow.error); return; }
+    const result = onSave({ rows, marketplaces: selectedMarketplaces });
+    if (result === true) onClose();
+    else if (typeof result === "string") setError(result);
+    else setError("The listings could not be created. Check the selected products and try again.");
+  };
+
+  return <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
+    <SafeAreaView style={styles.modalSafe}>
+      <View style={styles.modalHeader}>
+        <Pressable onPress={onClose}><Text style={styles.modalCancel}>Cancel</Text></Pressable>
+        <Text style={styles.modalTitle}>Bulk create listings</Text>
+        <Pressable accessibilityRole="button" onPress={submit}><Text style={styles.modalSave}>Create {selectedProducts.length || "listings"}</Text></Pressable>
+      </View>
+      <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === "ios" ? "padding" : "height"}>
+        <ScrollView contentContainerStyle={styles.formContent} keyboardShouldPersistTaps="handled">
+          <View style={styles.infoBanner}>
+            <Text style={styles.infoBannerTitle}>Create marketplace listing records in one pass</Text>
+            <Text style={styles.infoBannerText}>Only active products with finished stock ready to list are shown. Each listing starts with its product name, description, details, and saved selling price. You can change the date and price for each product. These records do not publish anything to marketplace accounts.</Text>
+          </View>
+
+          <ChoiceChips label="Listing date" options={[{ label: "One date for all", value: "same" }, { label: "Choose a date for each", value: "each" }]} value={dateMode} onChange={setDateMode} />
+          {dateMode === "same"
+            ? <Field field={{ label: "Listing date for all selected products", date: true }} value={sharedDate} onChange={setSharedDate} />
+            : <Field field={{ label: "Starting date for each product", date: true, hint: "Each selected product receives this date first. Change individual dates in that product’s row below." }} value={sharedDate} onChange={setSharedDate} />}
+
+          <Text style={styles.fieldLabel}>Products to list · {selectedProductIds.length} selected</Text>
+          <TextInput value={search} onChangeText={setSearch} placeholder="Search products or SKU" placeholderTextColor={COLORS.placeholder} style={styles.input} autoCapitalize="none" autoCorrect={false} />
+          {availableProducts.length ? <View style={styles.actionRow}>
+            <Action label="Select all available" quiet onPress={() => setSelectedProductIds(availableProducts.map((product) => product.id))} />
+            {selectedProductIds.length ? <Action label="Clear selection" quiet onPress={() => setSelectedProductIds([])} /> : null}
+          </View> : null}
+          {visibleProducts.length ? visibleProducts.map((product) => {
+            const checked = selectedProductIds.includes(product.id);
+            return <Card key={product.id} style={styles.historyCard}>
+              <Pressable accessibilityRole="checkbox" accessibilityState={{ checked }} accessibilityLabel={product.name + " " + (product.sku || "")}
+                onPress={() => toggleProduct(product.id)} style={[styles.bulkCreateProductChoice, checked && styles.bulkCreateProductChoiceSelected]}>
+                <View style={[styles.multiCheckbox, checked && styles.multiCheckboxSelected]}>{checked ? <Text style={styles.multiCheckboxCheck}>✓</Text> : null}</View>
+                <View style={styles.flex}>
+                  <Text style={styles.recordTitle}>{product.name}</Text>
+                  <Text style={styles.recordMeta}>{product.sku || "No product SKU"} · {productAvailableUnits(product, listings)} ready to sell · Product price {money(product.price, currency)}</Text>
+                </View>
+              </Pressable>
+              {checked ? <View style={styles.bulkCreateProductFields}>
+                <Text style={styles.fieldLabel}>Listing price override (optional)</Text>
+                <TextInput value={String(priceOverrides[product.id] == null ? "" : priceOverrides[product.id])}
+                  onChangeText={(value) => setPriceOverrides((old) => ({ ...old, [product.id]: value }))}
+                  placeholder={"Use product price · " + money(product.price, currency)} placeholderTextColor={COLORS.placeholder}
+                  keyboardType="decimal-pad" style={styles.input} />
+                {dateMode === "each" ? <Field field={{ label: "Listing date for this product", date: true }} value={productDates[product.id] || sharedDate} onChange={(value) => setProductDates((old) => ({ ...old, [product.id]: value }))} /> : null}
+              </View> : null}
+            </Card>;
+          }) : <EmptyState title={availableProducts.length ? "No products match this search" : "No products ready to list"} body={availableProducts.length ? "Try another product name or SKU." : "Active products with no ready finished stock are left out. Make more stock or archive an unsold listing to make a product available."} />}
+
+          <Field field={{ label: "Sales channels for all listings", options: (marketplaceOptions || []).map((value) => ({ label: value, value })), multiple: true, searchable: true, searchPlaceholder: "Search sales channels", placeholder: "Choose one or more channels" }} value={selectedMarketplaces} onChange={setSelectedMarketplaces} />
+          <Text style={styles.fieldHint}>New listings are created in product SKU order. Future listing dates are saved as Scheduled; dates today or earlier are saved as Active.</Text>
+          {error ? <Text style={styles.errorText}>{error}</Text> : null}
+          {selectedProducts.length ? <Action label={"Create " + selectedProducts.length + " listing" + (selectedProducts.length === 1 ? "" : "s")} onPress={submit} /> : null}
+        </ScrollView>
+      </KeyboardAvoidingView>
+    </SafeAreaView>
+  </Modal>;
+}
+
 const TUTORIAL_STEPS = [
   ["GRIMMS Business Tracker", "A practical workspace for handmade and small businesses. Keep materials, products, listings, sales, schedules, suppliers, and business finances organized in one place.", "Your saved records stay in this browser on this device. The guided tour and profile setup do not erase them. If you moved to a new phone or browser, choose Restore saved data and paste the backup text you kept."],
   ["Set up your shop profile", "Your business name, display currency, sales channels, and supplier names make the tracker match the way you work. You can change these later in Settings. The currency setting changes display only; it never converts saved amounts.", "Example: enter ‘Northside Studio,’ choose USD, add Etsy and In-person as channels, then add ‘Northside Bead Co.’ as a supplier. Keep each name consistent when recording listings and purchases."],
@@ -2513,6 +2622,7 @@ export default function App() {
   const [navigationStack, setNavigationStack] = useState(["Dashboard"]);
   const [modalType, setModalType] = useState("");
   const [bulkEditType, setBulkEditType] = useState("");
+  const [bulkCreateListingsOpen, setBulkCreateListingsOpen] = useState(false);
   const [editingRecord, setEditingRecord] = useState(null);
   const [formPrefill, setFormPrefill] = useState(null);
   const [detailSelection, setDetailSelection] = useState(null);
@@ -2996,6 +3106,66 @@ export default function App() {
     });
     setBulkEditType("");
     setRecordActionNotice("Bulk name and description changes saved. Check the save status in the top bar.");
+  };
+  const saveBulkCreatedListings = ({ rows, marketplaces }) => {
+    const selectedRows = Array.isArray(rows) ? rows : [];
+    const channels = Array.from(new Set((Array.isArray(marketplaces) ? marketplaces : []).map((value) => String(value || "").trim()).filter(Boolean)));
+    if (!selectedRows.length) return "Select at least one product before creating listings.";
+    if (!channels.length) return "Choose at least one sales channel for these listings.";
+    if (new Set(selectedRows.map((row) => row.productId)).size !== selectedRows.length) return "A product can only be selected once in this batch.";
+
+    const sortedRows = selectedRows.slice().sort((left, right) => {
+      const leftProduct = db.products.find((product) => product.id === left.productId);
+      const rightProduct = db.products.find((product) => product.id === right.productId);
+      return String(leftProduct && leftProduct.sku || "").localeCompare(String(rightProduct && rightProduct.sku || ""), undefined, { numeric: true, sensitivity: "base" })
+        || String(leftProduct && leftProduct.name || "").localeCompare(String(rightProduct && rightProduct.name || ""));
+    });
+    const prepared = [];
+    for (const row of sortedRows) {
+      const product = db.products.find((item) => item.id === row.productId);
+      if (!product || !active(product)) return "One of the selected products is no longer active. Refresh the list and try again.";
+      if (productAvailableUnits(product, db.listings) <= 0) return product.name + " no longer has finished stock ready to list. Refresh the list and try again.";
+      const startDate = parseDateInput(row.startDate);
+      if (!startDate || !/^\d{4}-\d{2}-\d{2}$/.test(startDate)) return "Choose a valid listing date for every selected product.";
+      const price = Number(row.price);
+      if (!Number.isFinite(price) || price < 0) return "Enter a valid price of zero or more for every selected product.";
+      prepared.push({ product, startDate, price });
+    }
+
+    const timestamp = new Date().toISOString();
+    const reservedListings = db.listings.slice();
+    const createdListings = prepared.map(({ product, startDate, price }) => {
+      const listingSku = "LIST-" + String(firstAvailableSkuNumber(reservedListings, "listingSku", "LIST-")).padStart(3, "0");
+      const productDescription = String(product.description || "").trim();
+      const listing = {
+        id: uid("listing"), createdAt: timestamp,
+        auditLog: [{ id: uid("audit"), action: "Record created", date: timestamp, changes: [] }],
+        productId: product.id, productName: product.name, productSku: product.sku, listingSku,
+        marketplaces: channels, marketplace: channels.join(", "),
+        status: startDate > TODAY ? "Scheduled" : "Active", startDate, price,
+        listingNameOverride: "", descriptionSource: "product", description: productDescription,
+        productDescriptionSnapshot: productDescription,
+        colors: product.colors || "", materials: product.materials || "", sizes: product.sizes || "", gender: product.gender || "",
+        condition: product.condition || "Handmade", packageWeight: Math.max(0, asNumber(product.packageWeight, 0)), packageWeightUnit: product.packageWeightUnit || "oz",
+        discountPlans: [], relistDate: "", relistDone: false, url: "", notes: "", images: [],
+        archived: false, needsArchive: false,
+      };
+      reservedListings.push(listing);
+      return listing;
+    });
+
+    setData((old) => withCurrentSkuCounters({
+      ...old,
+      listings: createdListings.concat(old.listings || []),
+      sortModes: { ...(old.sortModes || {}), listings: "productSkuAsc" },
+    }));
+    setShowArchivedListings(false);
+    setListingStatusFilter("All");
+    setListingChannelFilter("All");
+    setSearch("");
+    setRecordPageLimits((old) => ({ ...old, listings: Math.max(old.listings || RECORD_PAGE_SIZE, (db.listings || []).length + createdListings.length) }));
+    setRecordActionNotice(createdListings.length + " listings created and sorted by product SKU.");
+    return true;
   };
   const requestRecordConfirmation = (confirmation) => setPendingRecordConfirmation(confirmation);
   const finishRecordConfirmation = () => {
@@ -5005,7 +5175,7 @@ export default function App() {
     });
     return (
       <>
-        <View style={styles.infoBanner}><Text style={styles.infoBannerTitle}>Listings, promotion plans, and relists</Text><Text style={styles.infoBannerText}>Search and filter your marketplace listings. Live listings reserve the linked product’s finished stock, so it no longer shows as ready to sell. Archiving or pausing an unsold listing releases those finished units back to the product. Sold units stay deducted, and sold listings keep their sold count in history.</Text><View style={styles.actionRow}><Action label="＋ Add listing" onPress={() => beginAdd("listing")} /><Action label="Bulk edit names & descriptions" quiet onPress={() => setBulkEditType("listing")} /><Action label="Listing analytics" quiet onPress={() => navigateToScreen("Listing Analytics")} /></View></View>
+        <View style={styles.infoBanner}><Text style={styles.infoBannerTitle}>Listings, promotion plans, and relists</Text><Text style={styles.infoBannerText}>Search and filter your marketplace listings. Live listings reserve the linked product’s finished stock, so it no longer shows as ready to sell. Archiving or pausing an unsold listing releases those finished units back to the product. Sold units stay deducted, and sold listings keep their sold count in history.</Text><View style={styles.actionRow}><Action label="＋ Add listing" onPress={() => beginAdd("listing")} /><Action label="Bulk create listings" onPress={() => setBulkCreateListingsOpen(true)} /><Action label="Bulk edit names & descriptions" quiet onPress={() => setBulkEditType("listing")} /><Action label="Listing analytics" quiet onPress={() => navigateToScreen("Listing Analytics")} /></View></View>
         <View style={styles.metricGrid}><Metric label="Live now" value={String(actualListings)} /><Metric label="Need archiving" value={String(needsArchive)} /><Metric label="Discounts planned" value={String(scheduledDiscounts)} /><Metric label="Relists coming up" value={String(relistsDue)} /></View>
         <View style={styles.metricGrid}><Metric label="Sales channels" value={String(listingChannels.size)} /><Metric label="Products represented" value={String(representedProducts.size)} /><Metric label="Combined asking prices" value={money(combinedAskingPrices, db.currency)} /><Metric label="Product descriptions to review" value={String(descriptionsToReview.length)} /></View>
         {descriptionsToUpdate.length ? <Card><Text style={styles.infoBannerTitle}>Product descriptions changed</Text><Text style={styles.bodyText}>{descriptionsToUpdate.length} listing{descriptionsToUpdate.length === 1 ? " has" : "s have"} a newer product description. Review the listing before copying so you can keep marketplace wording that needs to stay different.</Text>{descriptionsToUpdate.slice(0, 5).map((item) => <View key={item.id} style={styles.detailLine}><View style={styles.flex}><Text style={styles.detailLabel}>{item.productName}</Text><Text style={styles.fieldHint}>{item.marketplace || (item.marketplaces || []).join(", ") || "Marketplace not saved"}</Text></View><Action label="Update description" onPress={() => copyProductDescriptionToListing(item)} /></View>)}</Card> : null}
@@ -5023,7 +5193,7 @@ export default function App() {
            <ChoiceChips label="Size" options={["All", ...attributeFilterOptions([...db.listings, ...db.products], "sizes", "sizes")]} value={filters.sizes || "All"} onChange={(value) => setAttributeFilter("listings", "sizes", value)} />
            <ChoiceChips label="Audience" options={["All", ...attributeFilterOptions([...db.listings, ...db.products], "genders", "gender")]} value={filters.gender || "All"} onChange={(value) => setAttributeFilter("listings", "gender", value)} />
          </> : null}
-         <SortControl value={db.sortModes.listings} onChange={(value) => saveSortMode("listings", value)} />
+         <SortControl value={db.sortModes.listings} options={LISTING_SORT_OPTIONS} onChange={(value) => saveSortMode("listings", value)} />
         {plans.length ? <>
           <View style={styles.sectionHeadingRow}><Text style={styles.sectionTitle}>Promotion &amp; relisting calendar</Text><Text style={styles.subtle}>{plans.length} upcoming</Text></View>
            {plans.slice(0, 12).map((plan, index) => <Card key={plan.listing.id + plan.kind + (plan.discountPlan ? plan.discountPlan.id : index)} style={styles.historyCard}>
@@ -6397,6 +6567,7 @@ export default function App() {
       </Modal>
       <RecordModal visible={!!modalType} type={modalType} record={editingRecord} db={db} prefill={formPrefill} onClose={closeForm} onSave={saveRecord} onManageOptions={manageDropdownFromField} />
       <BulkEditModal visible={!!bulkEditType} type={bulkEditType} records={bulkEditType === "listing" ? db.listings : db.products} products={db.products} onClose={() => setBulkEditType("")} onSave={saveBulkEdits} />
+      <BulkCreateListingsModal visible={bulkCreateListingsOpen} products={db.products} listings={db.listings} marketplaceOptions={(db.dropdownOptions && db.dropdownOptions.marketplaces) || DEFAULT_DROPDOWN_OPTIONS.marketplaces} currency={db.currency} onClose={() => setBulkCreateListingsOpen(false)} onSave={saveBulkCreatedListings} />
       <ThemeChooserModal visible={themePickerOpen} currentName={db.themeName} customTheme={db.customTheme} onClose={() => setThemePickerOpen(false)} onSelect={(name) => { chooseTheme(name); setThemePickerOpen(false); }} />
       <HelpModal visible={helpOpen} screen={isFulfillmentPage ? "Orders" : screen} onClose={() => setHelpOpen(false)} />
       <TutorialModal visible={tutorialOpen} onClose={() => finishTutorial(false)} onOpenSettings={() => finishTutorial(true)} onRestoreBackup={openSavedBackupRestore} />
@@ -6743,6 +6914,9 @@ function makeStyles() { return StyleSheet.create({
   reviewQuote: { color: COLORS.ink, fontSize: 14, lineHeight: 21, marginTop: 11 },
   reviewResponse: { backgroundColor: COLORS.soft, borderRadius: 12, padding: 11, marginTop: 10 },
   historyCard: { paddingVertical: 9 },
+  bulkCreateProductChoice: { flexDirection: "row", alignItems: "flex-start", gap: 10, paddingVertical: 3 },
+  bulkCreateProductChoiceSelected: { borderRadius: 9 },
+  bulkCreateProductFields: { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: COLORS.line, marginTop: 9, paddingTop: 10, paddingLeft: 30 },
   channelChipRow: { flexDirection: "row", flexWrap: "wrap", gap: 6, marginTop: 10 },
   channelChip: { backgroundColor: COLORS.lavender, borderRadius: 20, paddingHorizontal: 9, paddingVertical: 5, borderWidth: 1, borderColor: COLORS.line },
   channelChipText: { color: COLORS.wineDark, fontSize: 10, fontWeight: "700" },
