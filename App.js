@@ -3361,13 +3361,19 @@ export default function App() {
     return true;
   };
 
+  const listingHasOrderHistory = (listing, orders = db.orders) => (orders || []).some((order) =>
+    order.listingId === listing.id || order.listingSku && listing.listingSku && String(order.listingSku).trim().toLowerCase() === String(listing.listingSku).trim().toLowerCase() ||
+    (order.items || []).some((line) => line.listingId === listing.id || line.listingSku && listing.listingSku && String(line.listingSku).trim().toLowerCase() === String(listing.listingSku).trim().toLowerCase())
+  );
+  const archiveEligibleProductListing = (listing, productIds, orders = db.orders) => productIds.has(listing.productId) && active(listing) && !listing.needsArchive && listing.status !== "Sold" && !listingHasOrderHistory(listing, orders);
+
   const archiveRecord = (key, record, label, alreadyConfirmed = false) => {
-    const activeListings = key === "products" ? db.listings.filter((item) => item.productId === record.id && active(item)).length : 0;
+    const activeListings = key === "products" ? db.listings.filter((item) => archiveEligibleProductListing(item, new Set([record.id]))).length : 0;
     const recipeProducts = key === "components" ? db.products.filter((item) => active(item) && (item.recipe || []).some((part) => part.componentId === record.id)) : [];
     const unsoldUnits = key === "products" ? Math.max(0, Number(record.inventory) || 0) : 0;
     const message = key === "listings"
       ? "This archives only the marketplace listing. It does not archive the linked product or return any materials. The product and its finished stock stay in your catalog."
-      : key === "products" ? "This archives the product" + (activeListings ? " and " + activeListings + " related listing" + (activeListings === 1 ? "" : "s") : "") + (unsoldUnits > 0 ? ". It returns materials only for the " + unsoldUnits + " finished unit" + (unsoldUnits === 1 ? "" : "s") + " still in stock. Materials used to make sold units stay consumed." : ". Finished inventory is zero, so no materials will be returned. Materials used to make sold units stay consumed.") + " Restoring this product will use materials again for the stock being restored."
+      : key === "products" ? "This archives the product" + (activeListings ? " and " + activeListings + " active unsold listing" + (activeListings === 1 ? "" : "s") : "") + (unsoldUnits > 0 ? ". It returns materials only for the " + unsoldUnits + " finished unit" + (unsoldUnits === 1 ? "" : "s") + " still in stock. Materials already used for recorded sales stay consumed." : ". Finished inventory is zero, so no materials will be returned.") + " Listings connected to recorded sales and all orders stay unchanged. Restoring this product will use materials again for the stock being restored."
         : recipeProducts.length ? "This keeps its history and hides it from active lists. It is used by " + recipeProducts.map((item) => item.name).join(", ") + ". Production for those products will need this component restored or replaced in the recipe."
           : "This keeps its history and hides it from active lists.";
     const applyArchive = () => setData((old) => {
@@ -3382,11 +3388,12 @@ export default function App() {
         const restoredByComponent = {};
         recipe.forEach((part) => { restoredByComponent[part.componentId] = (restoredByComponent[part.componentId] || 0) + (Number(part.quantity) || 0) * unsoldUnits; });
         const now = new Date().toISOString();
+        const productIdSet = new Set([product.id]);
         const components = old.components.map((component) => restoredByComponent[component.id]
           ? { ...component, quantity: (Number(component.quantity) || 0) + restoredByComponent[component.id] }
           : component);
         const componentTransactions = Object.entries(restoredByComponent).filter(([, quantity]) => quantity > 0).map(([componentId, quantity]) => ({ id: uid("archive-return"), componentId, quantity, kind: "Materials returned from archived product", productId: product.id, date: now, note: unsoldUnits + " unsold finished units returned to component stock" }));
-        const listings = old.listings.map((listing) => listing.productId === product.id && active(listing)
+        const listings = old.listings.map((listing) => archiveEligibleProductListing(listing, productIdSet, old.orders)
           ? { ...listing, archived: true, archivedByProductId: product.id, archivedAt: now, auditLog: (listing.auditLog || []).concat([{ id: uid("audit"), action: "Listing archived with product", date: now, changes: [{ field: "archived", from: false, to: true }] }]) }
           : listing);
         return {
@@ -3409,6 +3416,39 @@ export default function App() {
       successMessage: label + " archived. You can restore it in Settings → Archived records.",
       onConfirm: applyArchive,
     });
+  };
+
+  const archiveAllOutOfStockProducts = () => {
+    const eligibleProducts = db.products.filter((item) => active(item) && Math.max(0, Number(item.inventory) || 0) === 0);
+    if (!eligibleProducts.length) return;
+    const productIds = new Set(eligibleProducts.map((item) => item.id));
+    const unsoldListingCount = db.listings.filter((listing) => archiveEligibleProductListing(listing, productIds)).length;
+    setData((old) => {
+      const toArchive = old.products.filter((item) => productIds.has(item.id) && active(item) && Math.max(0, Number(item.inventory) || 0) === 0);
+      if (!toArchive.length) return old;
+      const archivedIds = new Set(toArchive.map((item) => item.id));
+      const now = new Date().toISOString();
+      return {
+        ...old,
+        products: old.products.map((item) => archivedIds.has(item.id) ? {
+          ...item,
+          archived: true,
+          archivedAt: now,
+          inventory: 0,
+          archivedInventory: 0,
+          archiveRecipeSnapshot: (item.recipe || []).map((part) => ({ ...part })),
+          auditLog: (item.auditLog || []).concat([{ id: uid("audit"), action: "Out-of-stock product archived", date: now, changes: [{ field: "archived", from: !!item.archived, to: true }] }]),
+        } : item),
+        listings: old.listings.map((listing) => archiveEligibleProductListing(listing, archivedIds, old.orders) ? {
+          ...listing,
+          archived: true,
+          archivedByProductId: listing.productId,
+          archivedAt: now,
+          auditLog: (listing.auditLog || []).concat([{ id: uid("audit"), action: "Listing archived with out-of-stock product", date: now, changes: [{ field: "archived", from: !!listing.archived, to: true }] }]),
+        } : listing),
+      };
+    });
+    setRecordActionNotice("Archived " + eligibleProducts.length + " out-of-stock product" + (eligibleProducts.length === 1 ? "" : "s") + (unsoldListingCount ? " and " + unsoldListingCount + " unsold listing" + (unsoldListingCount === 1 ? "" : "s") : "") + ". Orders, production history, component stock, and listings tied to recorded sales were left unchanged. Restore products anytime from Show archived products.");
   };
 
   const restoreRecord = (key, record) => {
@@ -4670,6 +4710,7 @@ export default function App() {
   const renderProducts = () => {
     const categories = Array.from(new Set(db.products.map((item) => item.category || "Other"))).sort((a, b) => a.localeCompare(b));
     const activeProducts = db.products.filter(active);
+    const outOfStockProducts = activeProducts.filter((item) => Math.max(0, Number(item.inventory) || 0) === 0);
     const records = showArchivedProducts ? db.products.filter((item) => !active(item)) : activeProducts;
     const filters = attributeFilters.products || {};
     const list = sortRecords(records.filter((item) =>
@@ -4684,7 +4725,7 @@ export default function App() {
     const inventoryValue = activeProducts.reduce((sum, item) => sum + (Number(item.inventory) || 0) * (Number(item.price) || 0), 0);
     return (
       <>
-        <View style={styles.infoBanner}><Text style={styles.infoBannerTitle}>Your product catalog</Text><Text style={styles.infoBannerText}>Products share finished stock with orders and listing availability. Production checks each saved recipe against component stock.</Text><View style={styles.actionRow}><Action label="＋ Add product" onPress={() => beginAdd("product")} /><Action label="Bulk edit names & descriptions" quiet onPress={() => setBulkEditType("product")} /><Action label="＋ Make products" quiet onPress={() => navigateToScreen("Production")} /></View></View>
+        <View style={styles.infoBanner}><Text style={styles.infoBannerTitle}>Your product catalog</Text><Text style={styles.infoBannerText}>Products share finished stock with orders and listing availability. Production checks each saved recipe against component stock.</Text><View style={styles.actionRow}><Action label="＋ Add product" onPress={() => beginAdd("product")} /><Action label="Bulk edit names & descriptions" quiet onPress={() => setBulkEditType("product")} /><Action label="＋ Make products" quiet onPress={() => navigateToScreen("Production")} />{!showArchivedProducts && outOfStockProducts.length ? <Action label={"Archive all out of stock · " + outOfStockProducts.length} quiet onPress={archiveAllOutOfStockProducts} /> : null}</View>{!showArchivedProducts && outOfStockProducts.length ? <Text style={styles.infoBannerText}>One click also archives linked unsold listings. Listings tied to recorded sales, orders, production history, and component stock stay unchanged. Restore products and their unsold listings anytime from Show archived products.</Text> : null}</View>
         <View style={styles.metricGrid}><Metric label="Active products" value={String(activeProducts.length)} /><Metric label="Finished units" value={String(activeProducts.reduce((sum, item) => sum + (Number(item.inventory) || 0), 0))} /><Metric label="Out of stock" value={String(activeProducts.filter((item) => Number(item.inventory) <= 0).length)} /><Metric label="Retail value on hand" value={money(inventoryValue, db.currency)} /></View>
         <ChoiceChips label="Filter products" options={["All", ...categories]} value={productCategoryFilter} onChange={setProductCategoryFilter} />
         <View style={styles.actionRow}><Action label={expandedAttributeFilters.products ? "Hide attribute filters" : "Filter by color, material, size, or audience" + (attributeFilterCount("products") ? " · " + attributeFilterCount("products") + " active" : "")} quiet onPress={() => toggleAttributeFilters("products")} />{attributeFilterCount("products") ? <Action label="Clear filters" quiet onPress={() => clearAttributeFilters("products")} /> : null}</View>
@@ -4819,6 +4860,44 @@ export default function App() {
       return { channel, payout: Math.max(0, price - fee), configured: Number(rule.percent) > 0 || Number(rule.fixed) > 0 };
     });
     const editListing = (item) => beginEdit("listing", { ...item, price: String(item.price), marketplaces: item.marketplaces || (item.marketplace ? [item.marketplace] : []) });
+    const copyListingText = async (item, kind) => {
+      const label = kind === "title" ? "Listing title" : "Marketplace description";
+      const text = String(kind === "title" ? item.productName || "" : item.description || "");
+      if (!text.trim()) {
+        Alert.alert("Nothing to copy", "This listing does not have a saved " + (kind === "title" ? "title" : "description") + " yet.");
+        return;
+      }
+      if (Platform.OS === "web") {
+        let copied = false;
+        try {
+          if (typeof navigator !== "undefined" && navigator.clipboard && navigator.clipboard.writeText) {
+            await navigator.clipboard.writeText(text);
+            copied = true;
+          }
+        } catch (_error) { copied = false; }
+        if (!copied && typeof document !== "undefined" && document.body && document.execCommand) {
+          let input = null;
+          try {
+            input = document.createElement("textarea");
+            input.value = text;
+            input.setAttribute("readonly", "");
+            input.style.position = "fixed";
+            input.style.left = "-9999px";
+            document.body.appendChild(input);
+            input.select();
+            copied = document.execCommand("copy");
+          } catch (_error) { copied = false; }
+          finally { if (input && input.parentNode) input.parentNode.removeChild(input); }
+        }
+        Alert.alert(copied ? label + " copied" : "Could not copy automatically", copied ? "Ready to paste into your marketplace." : "Select the listing text and copy it manually.");
+        return;
+      }
+      try {
+        await Share.share({ title: "Copy " + label.toLowerCase(), message: text });
+      } catch (_error) {
+        Alert.alert("Could not open sharing", "Open this listing's details and select the " + (kind === "title" ? "title" : "description") + " to copy it.");
+      }
+    };
     const copyProductDescriptionToListing = (item) => setData((old) => {
       const product = old.products.find((row) => row.id === item.productId);
       if (!product) return old;
@@ -4880,7 +4959,7 @@ export default function App() {
         <View style={styles.sectionHeadingRow}><Text style={styles.sectionTitle}>{showArchivedListings ? "Archived listings" : "Your marketplace listings"}</Text></View>
         {pagedListings.length ? pagedListings.map((item) => (
           <Card key={item.id}><View style={styles.cardTop}><View style={styles.flex}><Text style={styles.recordTitle}>{item.productName}</Text>{item.listingNameOverride ? <Text style={styles.recordMeta}>Custom listing title</Text> : null}<Text style={styles.recordMeta}>{item.listingSku || "LIST SKU missing"} · {item.productSku || "Product SKU missing"}</Text><Text style={styles.recordMeta}>{item.marketplace || "Marketplace not saved"} · {item.price != null ? money(item.price, db.currency) : "Price not saved"}</Text>{listingDescriptionNeedsUpdate(item) ? <Text style={styles.errorText}>Product description changed · review details</Text> : null}</View><View style={{ alignItems: "flex-end", gap: 6 }}><Pill text={item.archived ? "Archived" : item.needsArchive ? "Sold · archive this listing" : item.status === "Paused" ? "Paused" : item.startDate && item.startDate > TODAY ? "Planned" : item.status || "Draft"} tone={item.needsArchive ? "red" : item.archived ? "neutral" : item.status === "Active" ? "green" : "amber"} /><Action label="Edit" quiet onPress={() => editListing(item)} /></View></View>
-            <View style={styles.actionRow}><Action label={expandedListingIds.includes(item.id) ? "Hide details" : "Show details"} quiet onPress={() => setExpandedListingIds((old) => old.includes(item.id) ? [] : [item.id])} /></View>
+            <View style={styles.actionRow}><Action label={expandedListingIds.includes(item.id) ? "Hide details" : "Show details"} quiet onPress={() => setExpandedListingIds((old) => old.includes(item.id) ? [] : [item.id])} /><Action label="Copy title" quiet onPress={() => copyListingText(item, "title")} /><Action label="Copy description" quiet onPress={() => copyListingText(item, "description")} /></View>
             {expandedListingIds.includes(item.id) ? <>
             {(() => {
               const discountPlans = item.discountPlans || [];
