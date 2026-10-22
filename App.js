@@ -233,6 +233,17 @@ const LISTING_ANALYTICS_METRICS = [
   { key: "watchers", label: "Watchers", icon: "◎" },
   { key: "offers", label: "Offers", icon: "◇" },
 ];
+const BUSINESS_OVERVIEW_REPORT_OPTIONS = [
+  { key: "overview", label: "Overview and estimated profit", markers: ["AT A GLANCE"] },
+  { key: "sales", label: "Sales, orders, and products that did not sell", markers: ["SALES BY PRODUCT", "PRODUCTS WITH NO RECORDED SALES IN THIS PERIOD", "ORDERS BY MARKETPLACE"] },
+  { key: "analytics", label: "Marketplace analytics and top performers", markers: ["MARKETPLACE ANALYTICS INCREASES", "TOP LISTING PERFORMERS"] },
+  { key: "production", label: "Production, product recipes, and stock changes", markers: ["PRODUCTION AND COST TO MAKE", "COMPONENT STOCK CHANGES IN THIS PERIOD", "PRODUCT STOCK CHANGES IN THIS PERIOD", "COMPONENT PURCHASES AND RESTOCKS"] },
+  { key: "listings", label: "Listing dates, discounts, and relists", markers: ["LISTING DATES, DISCOUNTS, AND RELISTS"] },
+  { key: "finances", label: "Income, expenses, and reviews", markers: ["INCOME, EXPENSES, AND REVIEWS"] },
+  { key: "schedule", label: "Work time, tasks, and schedule", markers: ["WORK AND BUSINESS SCHEDULE"] },
+  { key: "catalog", label: "Current component and listing catalogs", markers: ["CURRENT COMPONENT CATALOG (snapshot today)", "CURRENT LISTINGS (snapshot today)"] },
+  { key: "notes", label: "How to interpret the report", markers: ["REPORT NOTES"] },
+];
 
 const ANNOUNCEMENTS = [
   {
@@ -1331,7 +1342,7 @@ function Field({ field, value, onChange, onManageOptions }) {
         </View>
       ) : field.date ? (
         <View>
-          <View style={styles.dateInputRow}>
+          {Platform.OS === "web" ? <View style={styles.dateInputRow}>
             <TextInput
               value={formatDateInput(value)}
               onChangeText={onChange}
@@ -1340,38 +1351,61 @@ function Field({ field, value, onChange, onManageOptions }) {
               keyboardType="numbers-and-punctuation"
               style={[styles.input, styles.dateTextInput]}
               selectTextOnFocus={field.selectTextOnFocus}
+              accessibilityLabel={field.label + " typed date"}
             />
-            <Pressable style={styles.dateCalendarButton} onPress={openDatePicker} accessibilityRole="button" accessibilityLabel={"Choose " + field.label + " from calendar"}>
+            <View style={[styles.dateCalendarButton, { position: "relative", overflow: "hidden" }]}>
               <AppIcon name="calendar" size={18} color={COLORS.wine} />
-            </Pressable>
-          </View>
-          <Text style={styles.fieldHint}>Type a date or choose one from the calendar. Your date format is set in Settings.</Text>
-          <Modal visible={datePickerOpen} transparent animationType="fade" onRequestClose={() => setDatePickerOpen(false)}>
-            <View style={styles.chooserBackdrop}>
-              <View style={styles.datePickerCard}>
-                <View style={styles.monthHeader}>
-                  <Pressable style={styles.monthArrow} onPress={() => setDatePickerMonth(new Date(datePickerMonth.getFullYear(), datePickerMonth.getMonth() - 1, 1))}><Text style={styles.monthArrowText}>‹</Text></Pressable>
-                  <Text style={styles.monthTitle}>{datePickerMonth.toLocaleDateString(undefined, { month: "long", year: "numeric" })}</Text>
-                  <Pressable style={styles.monthArrow} onPress={() => setDatePickerMonth(new Date(datePickerMonth.getFullYear(), datePickerMonth.getMonth() + 1, 1))}><Text style={styles.monthArrowText}>›</Text></Pressable>
-                </View>
-                <View style={styles.calendarWeek}>{["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((day) => <Text key={day} style={styles.weekDay}>{day}</Text>)}</View>
-                <View style={styles.datePickerGrid}>
-                  {datePickerDays.map((day) => {
-                    const key = localDateKey(day);
-                    const inMonth = day.getMonth() === datePickerMonth.getMonth();
-                    return <Pressable key={key} onPress={() => { onChange(key); setDatePickerOpen(false); }} style={[styles.calendarCell, !inMonth && styles.datePickerOutside, key === selectedDateKey && styles.calendarCellSelected]}>
-                      <Text style={[styles.calendarDay, !inMonth && styles.calendarDayOutside, key === localDateKey(new Date()) && styles.calendarDayToday, key === selectedDateKey && styles.calendarDayPicked]}>{day.getDate()}</Text>
-                    </Pressable>;
-                  })}
-                </View>
-                <View style={styles.actionRow}>
-                  <Action label="Clear date" quiet onPress={() => { onChange(""); setDatePickerOpen(false); }} />
-                  <Action label="Today" onPress={() => { onChange(localDateKey(new Date())); setDatePickerOpen(false); }} />
-                  <Action label="Close" quiet onPress={() => setDatePickerOpen(false)} />
+              <input
+                type="date"
+                aria-label={"Choose " + field.label + " from calendar"}
+                value={parseDateInput(value) || ""}
+                onChange={(event) => onChange(event.currentTarget.value)}
+                style={{ position: "absolute", top: 0, right: 0, bottom: 0, left: 0, width: "100%", height: "100%", opacity: 0.015, cursor: "pointer" }}
+              />
+            </View>
+          </View> : <>
+            <View style={styles.dateInputRow}>
+              <TextInput
+                value={formatDateInput(value)}
+                onChangeText={onChange}
+                placeholder={field.placeholder || CURRENT_DATE_FORMAT + " (or YYYY-MM-DD)"}
+                placeholderTextColor={COLORS.placeholder}
+                keyboardType="numbers-and-punctuation"
+                style={[styles.input, styles.dateTextInput]}
+                selectTextOnFocus={field.selectTextOnFocus}
+              />
+              <Pressable style={styles.dateCalendarButton} onPress={openDatePicker} accessibilityRole="button" accessibilityLabel={"Choose " + field.label + " from calendar"}>
+                <AppIcon name="calendar" size={18} color={COLORS.wine} />
+              </Pressable>
+            </View>
+            <Modal visible={datePickerOpen} transparent animationType="fade" onRequestClose={() => setDatePickerOpen(false)}>
+              <View style={styles.chooserBackdrop}>
+                <View style={styles.datePickerCard}>
+                  <View style={styles.monthHeader}>
+                    <Pressable style={styles.monthArrow} onPress={() => setDatePickerMonth(new Date(datePickerMonth.getFullYear(), datePickerMonth.getMonth() - 1, 1))}><Text style={styles.monthArrowText}>‹</Text></Pressable>
+                    <Text style={styles.monthTitle}>{datePickerMonth.toLocaleDateString(undefined, { month: "long", year: "numeric" })}</Text>
+                    <Pressable style={styles.monthArrow} onPress={() => setDatePickerMonth(new Date(datePickerMonth.getFullYear(), datePickerMonth.getMonth() + 1, 1))}><Text style={styles.monthArrowText}>›</Text></Pressable>
+                  </View>
+                  <View style={styles.calendarWeek}>{["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((day) => <Text key={day} style={styles.weekDay}>{day}</Text>)}</View>
+                  <View style={styles.datePickerGrid}>
+                    {datePickerDays.map((day) => {
+                      const key = localDateKey(day);
+                      const inMonth = day.getMonth() === datePickerMonth.getMonth();
+                      return <Pressable key={key} onPress={() => { onChange(key); setDatePickerOpen(false); }} style={[styles.calendarCell, !inMonth && styles.datePickerOutside, key === selectedDateKey && styles.calendarCellSelected]}>
+                        <Text style={[styles.calendarDay, !inMonth && styles.calendarDayOutside, key === localDateKey(new Date()) && styles.calendarDayToday, key === selectedDateKey && styles.calendarDayPicked]}>{day.getDate()}</Text>
+                      </Pressable>;
+                    })}
+                  </View>
+                  <View style={styles.actionRow}>
+                    <Action label="Clear date" quiet onPress={() => { onChange(""); setDatePickerOpen(false); }} />
+                    <Action label="Today" onPress={() => { onChange(localDateKey(new Date())); setDatePickerOpen(false); }} />
+                    <Action label="Close" quiet onPress={() => setDatePickerOpen(false)} />
+                  </View>
                 </View>
               </View>
-            </View>
-          </Modal>
+            </Modal>
+          </>}
+          <Text style={styles.fieldHint}>{Platform.OS === "web" ? "Type a date in the left field or select the calendar button. Your date format is set in Settings." : "Type a date or choose one from the calendar. Your date format is set in Settings."}</Text>
         </View>
       ) : field.time ? (
         <TimeInput value={value} onChange={onChange} placeholder={field.placeholder} />
@@ -2149,7 +2183,7 @@ const HELP_COPY = {
   Products: ["A product is a completed item you intend to sell. Add its buyer-facing name, normal price, ready-to-sell count, colors, materials, condition, and the weight of the fully packed parcel. The recipe is optional: it lists how much of each component one finished unit consumes, so Production can update stock. Descriptive materials text and recipe quantities are separate fields.", "Example: add ‘Pearl drop earrings,’ price 28.00, inventory 3, colors ‘ivory, brass.’ In the recipe, assign 2 hooks and 4 pearls per pair. Recording production of 2 pairs then uses 4 hooks and 8 pearls."],
   Listings: ["A listing is your record of a product page on one or more sales channels. A listing follows its linked product’s name automatically unless you enter a listing-only name. For the marketplace description, copy the linked product text when you want or write a separate version; copied descriptions are flagged when the product text changes. These edits save in this tracker and do not publish changes to the marketplace. Add prices, status, dates, public URLs, and discount plans here.", "Example: create a listing for ‘Pearl drop earrings’ and select Etsy. Leave Listing name blank to follow the product name, choose Copy the product description, or write different buyer-facing text. If the product description changes later, Listings shows an update reminder so you can review and copy it again."],
   "Listing Analytics": ["Record the current totals shown by a marketplace for a listing and channel. Each recording is saved as a timestamped snapshot; the first one is a baseline, and later snapshots show increases between checks. Marketplace totals are entered manually and are not imported. Leave metrics blank when a channel does not provide them. Date filters assign a snapshot increase to the later check and do not fill in days with no recordings.", "Example: record 100 views on Monday and 125 on Tuesday for the same Etsy listing. The dashboard counts 25 observed additional views on Tuesday, not 225 total views. Record Depop separately even if the same product is listed there."],
-  "Business Overview": ["Choose a start date and end date to create a detailed report from the records saved in this tracker. It includes orders, product sales, costs, expenses, production, purchases, listing dates, discounts, relists, marketplace analytics, reviews, and tracked work. Use Copy report to paste the complete summary into a document or message. Marketplace totals are manual entries, not live imports. The component and product stock section is the current snapshot; dated inventory history shows recorded changes during the selected period, but this tracker does not recreate stock levels for past dates. Profit is an estimate based on entered fees, payouts, product costs, shipping, and expenses; it excludes labor and taxes.", "Example: choose October 1 through October 31, review the sales and stock changes alongside marketplace view and favorite increases, then copy the report for a monthly business review. If your app records an expense or sale late, add or correct its date and the report will include it."],
+  "Business Overview": ["Choose a start date and end date to create a detailed report from the records saved in this tracker. Check the sections you want, choose Make report to review them, then copy the finished report. It includes orders, product sales, costs, expenses, production, purchases, listing dates, discounts, relists, marketplace analytics, reviews, and tracked work. Marketplace totals are manual entries, not live imports. The component and product stock section is the current snapshot; dated inventory history shows recorded changes during the selected period, but this tracker does not recreate stock levels for past dates. Profit is an estimate based on entered fees, payouts, product costs, shipping, and expenses; it excludes labor and taxes.", "Example: choose October 1 through October 31, check sales, marketplace activity, and listing history, then tap Make report. Review the report and use Copy report for a monthly business review. If a sale or expense is entered late, add or correct its date and make the report again."],
   Orders: ["An order is a sale you enter manually; the app does not import orders or take payment. Choose the product, quantity, sale channel, price, date, and any shipping or fee details. Saving a sale reduces the product’s finished inventory. Move its fulfillment status forward only when that step has happened; Details keeps the timeline, refund history, and corrections together. Enter actual fees from the marketplace when available; otherwise the saved fee rule is an estimate.", "Example: record one necklace at 28.00 sold through Etsy on 12/02/2026. The product inventory drops by one. Set ‘Needs Packaging’ while it is waiting, ‘Ready to Ship’ after packing, and ‘Shipped’ only after giving it to the carrier; then enter the tracking number."],
   Reviews: ["This is a private log of feedback you enter; it does not fetch, post, or reply to marketplace reviews. Save the buyer’s wording, rating, date, and optional public response. Link a review to a product or order when you can identify it. Keep any notes private to your tracker and avoid adding sensitive buyer information.", "Example: save the exact text ‘Beautifully made and arrived quickly,’ choose five stars, enter the posted date, link the earrings product, and paste your actual public reply if you wrote one."],
   Finances: ["This page summarizes recorded sales, refunds, marketplace fees, shipping, other income, and business expenses. Profit is an estimate based on the records you enter; it does not include labor, taxes, or unrecorded costs. Add expenses from receipts and enter actual order fees or final payouts when known. Compare totals with your marketplace statements.", "Example: record a $4.85 shipping label as an expense in ‘Shipping’ if you want it in business-expense totals. The order’s Shipping cost field also records shipping paid for that sale, so avoid entering the same cost twice."],
@@ -2659,6 +2693,8 @@ export default function App() {
   const [analyticsCustomEnd, setAnalyticsCustomEnd] = useState(TODAY);
   const [businessOverviewStart, setBusinessOverviewStart] = useState(TODAY);
   const [businessOverviewEnd, setBusinessOverviewEnd] = useState(TODAY);
+  const [businessOverviewSections, setBusinessOverviewSections] = useState(() => BUSINESS_OVERVIEW_REPORT_OPTIONS.map((section) => section.key));
+  const [businessReportReady, setBusinessReportReady] = useState(false);
   const [analyticsMarketplaceFilter, setAnalyticsMarketplaceFilter] = useState("All");
   const [analyticsCategoryFilter, setAnalyticsCategoryFilter] = useState("All");
   const [analyticsStatusFilter, setAnalyticsStatusFilter] = useState("Active");
@@ -5526,7 +5562,7 @@ export default function App() {
     const workLines = periodTimeSessions.concat(periodTimerSessions).map((session) => `${recordDate(session.date)} · ${session.projectName || session.label || "Work session"} · ${(session.taskTitles || []).join(", ") || "No task linked"} · ${formatDuration(session.durationMs)}${session.workNote ? " · " + session.workNote : ""}`);
     const workPlanLines = periodWorkPlans.map((plan) => `${recordDate(plan.date)} · ${plan.title || "Planned work"} · ${plan.startTime || ""}${plan.endTime ? "–" + plan.endTime : ""} · ${plan.done ? "Completed" : "Planned"}${plan.projectName ? " · " + plan.projectName : ""}`);
     const reviewLines = periodReviews.map((review) => `${recordDate(review.date)} · ${review.stars || "?"}/5 · ${review.platform || "Marketplace not saved"} · ${review.productName || "Product not linked"}${review.reviewText ? " · " + review.reviewText : ""}`);
-    const reportText = [
+    const fullReportLines = [
       `GRIMMS BUSINESS OVERVIEW · ${dateRangeText}`,
       `Prepared ${dateLabel(TODAY)} · Currency ${db.currency || "USD"}`,
       "",
@@ -5600,8 +5636,41 @@ export default function App() {
       "",
       "REPORT NOTES",
       "This report uses records saved in this tracker and the dates on those records. Marketplace analytics are entered manually; the first saved snapshot is a baseline, and only later observed increases are counted. Current stock, product recipes, and current component costs are snapshots today, not reconstructed historical balances. Estimated profit uses saved order payouts or estimated gross less fees and refunds, then subtracts shipping, recorded expenses, and saved unit material costs. It does not include labor, taxes, missing records, or unentered marketplace costs. Other income is shown separately and is included in cash after expenses, not in estimated profit.",
-    ].join("\n");
+    ];
+    const reportSectionsByMarker = new Map();
+    BUSINESS_OVERVIEW_REPORT_OPTIONS.forEach((section) => section.markers.forEach((marker) => reportSectionsByMarker.set(marker, section.key)));
+    const reportCoverLines = [];
+    const reportBlocks = [];
+    let currentReportBlock = null;
+    fullReportLines.forEach((line) => {
+      const sectionKey = reportSectionsByMarker.get(line);
+      if (sectionKey) {
+        currentReportBlock = { key: sectionKey, lines: [line] };
+        reportBlocks.push(currentReportBlock);
+      } else if (currentReportBlock) currentReportBlock.lines.push(line);
+      else reportCoverLines.push(line);
+    });
+    const reportText = [...reportCoverLines, ...reportBlocks.filter((block) => businessOverviewSections.includes(block.key)).flatMap((block) => block.lines)].join("\n");
+    const toggleReportSection = (key) => {
+      setBusinessReportReady(false);
+      setBusinessOverviewSections((current) => current.includes(key) ? current.filter((item) => item !== key) : current.concat([key]));
+    };
+    const makeReport = () => {
+      if (!validDates) {
+        Alert.alert("Enter valid dates", "Choose a valid start date and end date before making the report.");
+        return;
+      }
+      if (!businessOverviewSections.length) {
+        Alert.alert("Choose report sections", "Check at least one section to include in your report.");
+        return;
+      }
+      setBusinessReportReady(true);
+    };
     const copyReport = async () => {
+      if (!businessReportReady) {
+        Alert.alert("Make the report first", "Choose your report sections and tap Make report before copying it.");
+        return;
+      }
       if (!validDates) {
         Alert.alert("Enter valid dates", "Choose a valid start date and end date before copying the report.");
         return;
@@ -5632,13 +5701,24 @@ export default function App() {
       <View style={styles.infoBanner}>
         <Text style={styles.infoBannerTitle}>A full picture of your business for any date range</Text>
         <Text style={styles.infoBannerText}>Choose the first and last day to review. This report gathers saved sales, costs, production, material movement, listing activity, marketplace statistics, and work records. Marketplace totals are entered by you. The stock catalog is shown as it is today; dated history lists the recorded changes during your chosen range.</Text>
-        <View style={styles.analyticsDateRange}>
-          <View style={styles.flex}><Field field={{ label: "Start date", date: true }} value={businessOverviewStart} onChange={setBusinessOverviewStart} /></View>
-          <View style={styles.flex}><Field field={{ label: "End date", date: true }} value={businessOverviewEnd} onChange={setBusinessOverviewEnd} /></View>
+        <View style={[styles.analyticsDateRange, !wideLayout && { flexDirection: "column" }]}>
+          <View style={styles.flex}><Field field={{ label: "Start date", date: true }} value={businessOverviewStart} onChange={(value) => { setBusinessOverviewStart(value); setBusinessReportReady(false); }} /></View>
+          <View style={styles.flex}><Field field={{ label: "End date", date: true }} value={businessOverviewEnd} onChange={(value) => { setBusinessOverviewEnd(value); setBusinessReportReady(false); }} /></View>
         </View>
         <Text style={[styles.fieldHint, !validDates && { color: COLORS.red }]}>Report range: {validDates ? dateRangeText : "Enter valid start and end dates."} If the dates are entered in reverse order, the report automatically uses the earlier date first.</Text>
-        <View style={styles.actionRow}><Action label="Copy full report" onPress={copyReport} /><Action label="How to use this report" quiet onPress={() => setHelpOpen(true)} /></View>
+        <View style={styles.sectionHeadingRow}><Text style={styles.sectionTitle}>Choose report sections</Text><Text style={styles.subtle}>{businessOverviewSections.length} of {BUSINESS_OVERVIEW_REPORT_OPTIONS.length} selected</Text></View>
+        <Text style={styles.fieldHint}>Check the information you want included. You can remove sections before making the report.</Text>
+        <View style={styles.actionRow}><Action label="Select all" quiet onPress={() => { setBusinessOverviewSections(BUSINESS_OVERVIEW_REPORT_OPTIONS.map((section) => section.key)); setBusinessReportReady(false); }} /><Action label="Clear all" quiet onPress={() => { setBusinessOverviewSections([]); setBusinessReportReady(false); }} /></View>
+        <View style={styles.reportSectionList}>{BUSINESS_OVERVIEW_REPORT_OPTIONS.map((section) => {
+          const checked = businessOverviewSections.includes(section.key);
+          return <Pressable key={section.key} accessibilityRole="checkbox" accessibilityState={{ checked }} style={[styles.reportSectionOption, checked && styles.reportSectionOptionSelected]} onPress={() => toggleReportSection(section.key)}>
+            <View style={[styles.multiCheckbox, checked && styles.multiCheckboxSelected]}>{checked ? <Text style={styles.multiCheckboxCheck}>✓</Text> : null}</View>
+            <Text style={styles.reportSectionLabel}>{section.label}</Text>
+          </Pressable>;
+        })}</View>
+        <View style={styles.actionRow}><Action label={businessReportReady ? "Remake report" : "Make report"} onPress={makeReport} /><Action label="How to use this report" quiet onPress={() => setHelpOpen(true)} /></View>
       </View>
+      {businessReportReady ? <Card><Text style={styles.cardTitle}>Your selected report · {dateRangeText}</Text><Text style={styles.fieldHint}>Review the report below, then copy it to paste elsewhere.</Text><View style={styles.actionRow}><Action label="Copy report" onPress={copyReport} /><Action label="Change sections" quiet onPress={() => setBusinessReportReady(false)} /></View><Text selectable style={styles.bodyText}>{reportText}</Text></Card> : null}
       <View style={styles.metricGrid}>
         <Metric label="Orders" value={String(periodOrders.length)} sub={`${unitsOrdered} item units`} />
         <Metric label="Gross sales" value={money(gross, db.currency)} sub={`${money(refunds, db.currency)} refunded`} />
@@ -5670,7 +5750,7 @@ export default function App() {
       <Card><Text style={styles.cardTitle}>Income and expenses</Text><Text style={styles.bodyText}>Other income {money(otherIncome, db.currency)} · Out of pocket {money(outOfPocketExpenses, db.currency)} · Deducted from sales payouts {money(salesDeductionExpenses, db.currency)}</Text>{incomeLines.map((line) => <Text key={line} style={styles.bodyText}>{line}</Text>)}{expenseLines.map((line) => <Text key={line} style={styles.bodyText}>{line}</Text>)}{!incomeLines.length && !expenseLines.length ? <Text style={styles.bodyText}>No additional income or expenses were recorded.</Text> : null}</Card>
       <Card><Text style={styles.cardTitle}>Reviews</Text><Text style={styles.bodyText}>{periodReviews.length} reviews · {periodReviews.length ? averageReview.toFixed(1) + "/5 average rating" : "No reviews recorded in this range"}</Text>{reviewLines.map((line) => <Text key={line} style={styles.bodyText}>{line}</Text>)}</Card>
       <Card><Text style={styles.cardTitle}>Tracked work and schedule</Text><Text style={styles.bodyText}>{formatDuration(trackedHours)} tracked across {periodTimeSessions.length + periodTimerSessions.length} sessions · {periodTasks.length} tasks due · {periodEvents.length} calendar events · {periodWorkPlans.length} planned work blocks.</Text>{workLines.map((line) => <Text key={line} style={styles.bodyText}>{line}</Text>)}{workPlanLines.map((line) => <Text key={line} style={styles.bodyText}>{line}</Text>)}{periodTasks.map((item) => <Text key={item.id} style={styles.bodyText}>Task · {item.title || item.name} · {item.done ? "Done" : "Open"} · due {dateLabel(item.dueDate || item.date)}</Text>)}{periodEvents.map((item) => <Text key={item.id} style={styles.bodyText}>Event · {item.title || item.name} · {dateLabel(item.date)} · {item.done ? "Done" : "Open"}</Text>)}</Card>
-      <View style={styles.infoBanner}><Text style={styles.infoBannerTitle}>How to interpret this report</Text><Text style={styles.infoBannerText}>This report only includes records saved in GRIMMS. Marketplace analytics are manual snapshots; increases are assigned to the later check, and the first snapshot is a baseline. Product and component stock plus current recipe costs are today’s snapshot, while inventory history and production batches show dated activity. Estimated profit uses the saved payout when entered or an estimate from gross sales less fees and refunds, then subtracts saved shipping, expenses, and product material costs. It excludes labor, taxes, and costs or sales you have not entered. Other income is shown separately and included in cash after expenses.</Text><View style={styles.actionRow}><Action label="Copy full report" onPress={copyReport} /></View></View>
+      <View style={styles.infoBanner}><Text style={styles.infoBannerTitle}>How to interpret this report</Text><Text style={styles.infoBannerText}>This report only includes records saved in GRIMMS. Marketplace analytics are manual snapshots; increases are assigned to the later check, and the first snapshot is a baseline. Product and component stock plus current recipe costs are today’s snapshot, while inventory history and production batches show dated activity. Estimated profit uses the saved payout when entered or an estimate from gross sales less fees and refunds, then subtracts saved shipping, expenses, and product material costs. It excludes labor, taxes, and costs or sales you have not entered. Other income is shown separately and included in cash after expenses.</Text></View>
     </>;
   };
 
@@ -7107,6 +7187,10 @@ function makeStyles() { return StyleSheet.create({
   analyticsInputRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 8, paddingVertical: 5 },
   analyticsInput: { minHeight: 40, width: 150, borderRadius: 10, borderColor: COLORS.line, borderWidth: 1, paddingHorizontal: 9, color: COLORS.ink, backgroundColor: COLORS.card, fontSize: 12, textAlign: "right" },
   analyticsDateRange: { flexDirection: "row", gap: 8 },
+  reportSectionList: { gap: 6, marginTop: 5, marginBottom: 8 },
+  reportSectionOption: { minHeight: 42, flexDirection: "row", alignItems: "center", gap: 9, paddingHorizontal: 10, paddingVertical: 8, borderRadius: 10, borderWidth: 1, borderColor: COLORS.line, backgroundColor: COLORS.card },
+  reportSectionOptionSelected: { borderColor: COLORS.softLine, backgroundColor: COLORS.soft },
+  reportSectionLabel: { color: COLORS.ink, fontSize: 12, fontWeight: "600", flex: 1 },
   metric: { width: "48%", flexGrow: 1, backgroundColor: COLORS.card, borderRadius: 11, borderWidth: 1, borderColor: COLORS.line, padding: 10, minHeight: 64 },
   metricCompact: { width: 0, flex: 1, minWidth: 0, padding: 8, minHeight: 55 },
   metricLabel: { color: COLORS.muted, fontSize: 10, fontWeight: "600" },
