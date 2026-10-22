@@ -218,7 +218,7 @@ const DASHBOARD_WIDGETS = [
   { id: "welcome", label: "Welcome and priorities", description: "Daily overview and fulfillment counts" },
   { id: "sales", label: "Sales and cash", description: "Daily, weekly, monthly, and yearly sales, profit, fees, and expenses" },
   { id: "fulfillment", label: "Order fulfillment", description: "Counts by sale status" },
-  { id: "time", label: "Today’s time", description: "Today’s hours and clock status" },
+  { id: "time", label: "Today’s time", description: "Worked time, break totals, and current shift status" },
   { id: "attention", label: "Needs your attention", description: "Low stock, open orders, and overdue tasks" },
   { id: "snapshot", label: "Business snapshot", description: "Quick counts for products, materials, orders, and tasks" },
   { id: "connections", label: "Product and material connections", description: "See which materials are used by finished products and which products have active listings" },
@@ -956,7 +956,7 @@ function createFormDefaults(type, record, defaultLowStock, defaults) {
     base.sku = "PROD-" + String(firstAvailableSkuNumber(skuRows, "sku", "PROD-")).padStart(3, "0");
     base.price = ""; base.inventory = "0"; base.recipe = []; base.condition = "Handmade"; base.packageWeight = ""; base.packageWeightUnit = "oz";
   }
-  if (type === "listing") { base.status = "Draft"; base.price = ""; base.marketplaces = []; base.startDate = ""; base.relistDate = ""; base.description = ""; base.condition = "Handmade"; base.packageWeight = ""; base.packageWeightUnit = "oz"; }
+  if (type === "listing") { base.status = "Draft"; base.price = ""; base.marketplaces = []; base.startDate = ""; base.relistDate = ""; base.description = ""; base.listingNameOverride = ""; base.descriptionSource = "manual"; base.condition = "Handmade"; base.packageWeight = ""; base.packageWeightUnit = "oz"; }
   if (type === "order") { base.quantity = "1"; base.extraFees = "0"; base.shippingCost = "0"; base.marketplace = "Direct"; base.date = TODAY; base.packageWeight = ""; base.packageWeightUnit = "oz"; }
   if (type === "order") {
     const line = record && Array.isArray(record.items) ? record.items[0] : null;
@@ -1584,6 +1584,7 @@ function TimeEditModal({ visible, mode, session, tasks, onClose, onSave }) {
   const [breakMinutes, setBreakMinutes] = useState("0");
   const [taskIds, setTaskIds] = useState([]);
   const [workNote, setWorkNote] = useState("");
+  const [projectName, setProjectName] = useState("");
   const [timerName, setTimerName] = useState("");
   const [error, setError] = useState("");
   useEffect(() => {
@@ -1597,6 +1598,7 @@ function TimeEditModal({ visible, mode, session, tasks, onClose, onSave }) {
     setBreakMinutes(String(Math.round((Number(record.breakMs) || 0) / 60000)));
     setTaskIds(Array.isArray(record.taskIds) ? record.taskIds : (record.taskId ? [record.taskId] : []));
     setWorkNote(record.workNote || "");
+    setProjectName(record.projectName || "");
     setTimerName(record.label || "");
     setError("");
   }, [initialValuesJson, visible]);
@@ -1614,7 +1616,7 @@ function TimeEditModal({ visible, mode, session, tasks, onClose, onSave }) {
       setError("Check that the end is later than the start and the break is within the shift."); return;
     }
     const taskTitles = taskIds.map((id) => tasks.find((task) => task.id === id)?.title).filter(Boolean);
-    onSave({ mode, id: session.id, date: normalizedDate, clockIn, clockOut, breakMs: breaks * 60000, durationMs: clockOut ? clockOut - clockIn - breaks * 60000 : null, taskIds, taskTitles, workNote, label: timerName.trim() });
+    onSave({ mode, id: session.id, date: normalizedDate, clockIn, clockOut, breakMs: breaks * 60000, durationMs: clockOut ? clockOut - clockIn - breaks * 60000 : null, taskIds, taskTitles, workNote, projectName: projectName.trim(), label: timerName.trim() });
   };
   return <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
     <SafeAreaView style={styles.modalSafe}>
@@ -1627,6 +1629,7 @@ function TimeEditModal({ visible, mode, session, tasks, onClose, onSave }) {
         {mode !== "active" ? <Field field={{ label: mode === "timer" ? "Timer ended" : "Clock-out time", time: true }} value={endTime} onChange={setEndTime} /> : null}
         {mode !== "timer" ? <Field field={{ label: "Break minutes", number: true }} value={breakMinutes} onChange={setBreakMinutes} /> : null}
         <Field field={{ label: "Tasks worked on (choose all that apply)", options: tasks.map((task) => ({ label: task.title, value: task.id })), multiple: true, placeholder: "Choose one or more tasks" }} value={taskIds} onChange={setTaskIds} />
+        {mode !== "timer" ? <Field field={{ label: "Project or collection (optional)", placeholder: "Example: Holiday collection" }} value={projectName} onChange={setProjectName} /> : null}
         <Field field={{ label: "Work note", multiline: true, placeholder: "What did you work on during this shift?" }} value={workNote} onChange={setWorkNote} />
         {error ? <Text style={styles.errorText}>{error}</Text> : null}
       </ScrollView>
@@ -1861,11 +1864,13 @@ function RecordModal({ visible, type, record, db, prefill, onClose, onSave, onMa
     ],
     listing: [
       { key: "productId", label: "Product", options: productOptions, searchable: true, searchPlaceholder: "Search products", required: true, placeholder: "Choose a product" },
+      { key: "listingNameOverride", label: "Listing name (optional override)", placeholder: "Leave blank to use the product name", hint: "A custom title here applies only to this marketplace listing. Leave it blank to follow future product name changes." },
       { key: "listingSku", label: "Listing SKU", required: true, placeholder: "Example: LIST-001" },
       { key: "marketplaces", label: "Sales channels (choose all that apply)", optionSet: "marketplaces", options: optionsFor("marketplaces"), multiple: true, required: true, placeholder: "Choose one or more channels" },
       { key: "status", label: "Status", optionSet: "listingStatuses", options: optionsFor("listingStatuses"), placeholder: "Choose status" },
       { key: "price", label: "Listing price", number: true, placeholder: "0.00" },
-      { key: "description", label: "Marketplace description", multiline: true, placeholder: "The description buyers see on this marketplace listing" },
+      { key: "descriptionSource", label: "Marketplace description", options: [{ label: "Write my own marketplace description", value: "manual" }, { label: "Copy the product description", value: "product" }], hint: "Choosing the product option replaces the marketplace description with the linked product description. You can switch back and write your own anytime." },
+      { key: "description", label: "Marketplace description text", multiline: true, placeholder: "The description buyers see on this marketplace listing" },
       { key: "colors", label: "Colors", optionSet: "colors", options: optionsFor("colors"), multiple: true, searchable: true, placeholder: "Choose one or more colors" },
       { key: "materials", label: "Materials", optionSet: "materials", options: optionsFor("materials"), multiple: true, searchable: true, placeholder: "Choose one or more materials" },
       { key: "sizes", label: "Sizes", optionSet: "sizes", options: optionsFor("sizes"), multiple: true, searchable: true, placeholder: "Choose one or more sizes" },
@@ -2059,7 +2064,7 @@ function RecordModal({ visible, type, record, db, prefill, onClose, onSave, onMa
                   next.packageWeightUnit = selected.packageWeightUnit || "oz";
                   if (type === "listing") {
                     if (!next.listingSku) next.listingSku = selected.sku || "";
-                    if (!next.description) next.description = selected.description || "";
+                    if (next.descriptionSource === "product") next.description = selected.description || "";
                     next.colors = selected.colors || "";
                     next.materials = selected.materials || "";
                     next.sizes = selected.sizes || "";
@@ -2075,6 +2080,11 @@ function RecordModal({ visible, type, record, db, prefill, onClose, onSave, onMa
                   if (selected) next.unitPrice = String(selectedListing && selectedListing.price != null ? selectedListing.price : selected.price || "");
                 }
               }
+              if (type === "listing" && field.key === "descriptionSource" && value === "product") {
+                const selected = db.products.find((item) => item.id === next.productId);
+                next.description = selected ? selected.description || "" : "";
+              }
+              if (type === "listing" && field.key === "description") next.descriptionSource = "manual";
               if (type === "order" && field.key === "marketplace") {
                 const candidates = db.listings.filter((item) => active(item) && item.productId === next.productId);
                 const selectedListing = candidates.find((item) => (item.marketplaces || (item.marketplace ? String(item.marketplace).split(",").map((channel) => channel.trim()) : [])).includes(value)) || null;
@@ -2104,14 +2114,14 @@ const HELP_COPY = {
   Dashboard: ["This is your business overview, not a separate accounting ledger. Sales, order stages, low-stock materials, tasks, and time blocks are calculated from records you enter elsewhere. Change the Sales and cash view to daily, weekly, monthly, or yearly; tap a fulfillment status to open its product list. Use Settings to set a monthly gross-sales target or rearrange dashboard cards.", "Example: tap Ready to Ship to see only products in that status. Set a $1,500 monthly sales goal in Settings to see recorded gross sales progress; the goal measures sales, not profit."],
   Components: ["A component is a raw material or supply you keep in stock, such as beads, fabric, clasps, or mailers. Add one record per supply, choose a consistent unit, set the quantity you physically have, and optionally record cost, supplier, and a low-stock threshold. Restocks add units and preserve purchase history; a manual quantity correction asks for a reason. Search and sorting only change how you find records.", "Example: create ‘Brass lobster clasps,’ unit ‘pieces,’ quantity 40, cost per unit 0.18, and alert at 10. When a 100-piece order arrives, use Restock with quantity 100 and its actual purchase total; do not replace the old 40 with 100."],
   Products: ["A product is a completed item you intend to sell. Add its buyer-facing name, normal price, ready-to-sell count, colors, materials, condition, and the weight of the fully packed parcel. The recipe is optional: it lists how much of each component one finished unit consumes, so Production can update stock. Descriptive materials text and recipe quantities are separate fields.", "Example: add ‘Pearl drop earrings,’ price 28.00, inventory 3, colors ‘ivory, brass.’ In the recipe, assign 2 hooks and 4 pearls per pair. Recording production of 2 pairs then uses 4 hooks and 8 pearls."],
-  Listings: ["A listing is your record of a product page on one or more sales channels. Create the product first, then select the channels where you maintain a page, add each listing’s price, status, live date, renewal date, and public URL. Selecting a channel or entering a date does not publish, renew, or edit anything on that marketplace. Use ‘Add discount plan’ to plan a dated promotion for the selected channels; the tracker records its dates and percentage but does not change the marketplace price. Use the promotion calendar here to review upcoming discount starts/ends and relists.", "Example: create a listing for ‘Pearl drop earrings,’ select Etsy and Shopify, and paste the two public page links. To plan 10% off from 12/02/2026 through 12/05/2026, add a discount plan with 10, start date 12/02/2026, end date 12/05/2026, then separately set that sale in Etsy and Shopify. The calendar reminds you of the planned dates."],
+  Listings: ["A listing is your record of a product page on one or more sales channels. A listing follows its linked product’s name automatically unless you enter a listing-only name. For the marketplace description, copy the linked product text when you want or write a separate version; copied descriptions are flagged when the product text changes. These edits save in this tracker and do not publish changes to the marketplace. Add prices, status, dates, public URLs, and discount plans here.", "Example: create a listing for ‘Pearl drop earrings’ and select Etsy. Leave Listing name blank to follow the product name, choose Copy the product description, or write different buyer-facing text. If the product description changes later, Listings shows an update reminder so you can review and copy it again."],
   "Listing Analytics": ["Record the current totals shown by a marketplace for a listing and channel. Each recording is saved as a timestamped snapshot; the first one is a baseline, and later snapshots show increases between checks. Marketplace totals are entered manually and are not imported. Leave metrics blank when a channel does not provide them. Date filters assign a snapshot increase to the later check and do not fill in days with no recordings.", "Example: record 100 views on Monday and 125 on Tuesday for the same Etsy listing. The dashboard counts 25 observed additional views on Tuesday, not 225 total views. Record Depop separately even if the same product is listed there."],
   Orders: ["An order is a sale you enter manually; the app does not import orders or take payment. Choose the product, quantity, sale channel, price, date, and any shipping or fee details. Saving a sale reduces the product’s finished inventory. Move its fulfillment status forward only when that step has happened; Details keeps the timeline, refund history, and corrections together. Enter actual fees from the marketplace when available; otherwise the saved fee rule is an estimate.", "Example: record one necklace at 28.00 sold through Etsy on 12/02/2026. The product inventory drops by one. Set ‘Needs Packaging’ while it is waiting, ‘Ready to Ship’ after packing, and ‘Shipped’ only after giving it to the carrier; then enter the tracking number."],
   Reviews: ["This is a private log of feedback you enter; it does not fetch, post, or reply to marketplace reviews. Save the buyer’s wording, rating, date, and optional public response. Link a review to a product or order when you can identify it. Keep any notes private to your tracker and avoid adding sensitive buyer information.", "Example: save the exact text ‘Beautifully made and arrived quickly,’ choose five stars, enter the posted date, link the earrings product, and paste your actual public reply if you wrote one."],
   Finances: ["This page summarizes recorded sales, refunds, marketplace fees, shipping, other income, and business expenses. Profit is an estimate based on the records you enter; it does not include labor, taxes, or unrecorded costs. Add expenses from receipts and enter actual order fees or final payouts when known. Compare totals with your marketplace statements.", "Example: record a $4.85 shipping label as an expense in ‘Shipping’ if you want it in business-expense totals. The order’s Shipping cost field also records shipping paid for that sale, so avoid entering the same cost twice."],
   Tasks: ["Tasks are action items with a category, priority, due date, and optional notes. Mark a task done only after the work is complete; change the due date if plans change. Open tasks past their due date are flagged as overdue. A task is not a calendar event or a work-time record, although the Calendar and Time pages can reference tasks.", "Example: add ‘Photograph the new earrings,’ category ‘Product work,’ priority Normal, due 12/02/2026. Add the smaller next step ‘Take front and detail photos’ in notes, then check it off after uploading the photos."],
-  Calendar: ["The calendar automatically shows sale status history, discount start/end dates, and relisting plans. Filter sale stages such as Ready to Ship or Shipped, then filter discounts and relists by Planned or Done. Tasks, events, and work blocks you add are grouped under Schedules. Select a date to edit or remove its entries; the day schedule and Next up sections can be collapsed.", "Example: change an order to Shipped, edit that status date if needed, and the sale status appears on the chosen calendar date. Plan a discount and relisting on Listings; their start, end, and relist dates appear here and can be edited or removed."],
-  Time: ["Clock in and out to keep a shift record, or run the focus timer for a single task. Add break minutes to subtract breaks from worked time. You may link one or more saved tasks and add a private note; linking a task does not complete it. Edit a saved session if you need to correct its date or times. Time is tracked on this device and is not a payroll system.", "Example: clock in at 09:00, link ‘Pack customer orders,’ take a 30-minute break, and clock out at 13:00. The recorded work time is 3.5 hours."],
+  Calendar: ["The calendar automatically shows sale status history, discount start/end dates, relisting plans, and clocked shifts with their break totals. Filter sale stages such as Ready to Ship or Shipped, then filter discounts and relists by Planned or Done. Tasks, events, and work blocks you add are grouped under Schedules; shift records and breaks are under Time tracking. Select a date to review its entries.", "Example: change an order to Shipped and it appears on the chosen date. A shift you clocked in and out of appears on its work date with its task, project, worked time, and break total."],
+  Time: ["Clock in and out to keep a shift record, or run the focus timer for a single task. Add break minutes to subtract breaks from worked time. Link saved tasks, add a project or collection name, and write a private note; linking a task does not complete it. Shift times and break totals also appear on the Calendar and Dashboard. Time is tracked on this device and is not a payroll system.", "Example: clock in at 09:00, link ‘Pack customer orders,’ enter ‘Holiday collection,’ take a 30-minute break, and clock out at 13:00. The Dashboard and Calendar show the shift, project, task, and 3.5 hours worked."],
   Production: ["Production turns a saved product recipe into an inventory transaction. Choose a product and enter a positive quantity; decimals are supported for items tracked by weight or volume. The app multiplies every recipe amount by that number, subtracts those component quantities, and adds the finished quantity to product inventory. Check the recipe units and available component stock first; this tracker does not place purchase orders for shortages.", "Example: one candle recipe uses 200 g wax and one wick. Recording 3 candles subtracts 600 g wax and 3 wicks, then adds 3 candles to finished inventory."],
   Reports: ["Reports summarize only the sales, inventory, fees, expenses, and other activity entered in this tracker. They are not connected to your shops, bank, tax service, or accounting software. Compare figures with source statements and correct missing or duplicated records before relying on a total. Profit uses saved product recipe costs and entered expenses; it does not estimate labor or taxes.", "Example: if the report says 12 orders and your marketplace statement says 13, find the missing sale in Orders before using the total in your monthly review."],
   Suppliers: ["Use this directory for the supplier or shop name, contact method, website, category, and your purchasing notes. Reuse the same supplier name on component and restock records so you can recognize the relationship. Notes can hold useful buying details such as minimum order, package size, or typical delivery time; this is not a purchase-order system.", "Example: add ‘Northside Bead Co.’ with its order email and website, then note ‘Minimum order $25; brass chain usually ships in 3–5 days.’ Use that same name when recording a clasp restock."],
@@ -2614,6 +2624,7 @@ export default function App() {
   const [timerWorkNote, setTimerWorkNote] = useState("");
   const [shiftTaskIds, setShiftTaskIds] = useState([]);
   const [shiftWorkNote, setShiftWorkNote] = useState("");
+  const [shiftProjectName, setShiftProjectName] = useState("");
   const [planRange, setPlanRange] = useState("week");
   const [planAnchor, setPlanAnchor] = useState(() => new Date());
   const [timeEdit, setTimeEdit] = useState(null);
@@ -2885,9 +2896,8 @@ export default function App() {
         });
         const listings = old.listings.map((listing) => {
           const rename = renamedProducts.get(listing.productId);
-          // A listing title that still matches the old product name follows the rename.
-          // A title already customized on the listing stays independent.
-          return rename && String(listing.productName || "") === String(rename.from || "")
+          // Listings follow their product unless the user saved an explicit listing-only title.
+          return rename && !String(listing.listingNameOverride || "").trim()
             ? withAudit(listing, { productName: rename.to }, "Linked product name updated")
             : listing;
         });
@@ -2897,7 +2907,16 @@ export default function App() {
         const listings = old.listings.map((listing) => {
           const draft = draftById.get(listing.id);
           if (!draft) return listing;
-          return withAudit(listing, { productName: String(draft.name || "").trim(), description: String(draft.description || "") }, "Bulk edit name and description");
+          const product = old.products.find((item) => item.id === listing.productId);
+          const listingName = String(draft.name || "").trim();
+          const listingNameOverride = product && listingName === product.name ? "" : listingName;
+          const changes = { productName: listingName, listingNameOverride };
+          const description = String(draft.description || "");
+          if (description !== String(listing.description || "")) {
+            changes.description = description;
+            changes.descriptionSource = "manual";
+          }
+          return withAudit(listing, changes, "Bulk edit name and description");
         });
         return withCurrentSkuCounters({ ...old, listings });
       }
@@ -3118,9 +3137,10 @@ export default function App() {
         const sku = record ? (productSku || record.sku) : (productSku || "PROD-" + String(firstAvailableProductSkuNumber(old)).padStart(3, "0"));
         const productId = record ? record.id : uid("product");
         const startingInventory = inventoryBeingTracked;
+        const productName = String(values.name || "").trim();
         update("products", {
           id: productId,
-          name: String(values.name || "").trim(), sku, category: values.category || "Other",
+          name: productName, sku, category: values.category || "Other",
           price: Math.max(0, asNumber(values.price, 0)),
           inventory: startingInventory,
           recipe: parsedRecipe, colors: values.colors || "", materials: values.materials || "", sizes: values.sizes || "", gender: values.gender || "",
@@ -3128,6 +3148,16 @@ export default function App() {
           packageWeight: Math.max(0, asNumber(values.packageWeight, 0)), packageWeightUnit: values.packageWeightUnit || "oz",
           notes: String(values.description || "").trim(), images: record && record.images || [], archived: record ? !!record.archived : false,
           status: record ? record.status : "Available",
+        });
+        const syncDate = new Date().toISOString();
+        next.listings = (old.listings || []).map((listing) => {
+          if (listing.productId !== productId) return listing;
+          const nextListingName = String(listing.listingNameOverride || "").trim() || productName;
+          const changes = [];
+          if (listing.productName !== nextListingName) changes.push({ field: "listing name", from: listing.productName || "", to: nextListingName });
+          if (listing.productSku !== sku) changes.push({ field: "product SKU", from: listing.productSku || "", to: sku });
+          if (!changes.length) return listing;
+          return { ...listing, productName: nextListingName, productSku: sku, updatedAt: syncDate, auditLog: (listing.auditLog || []).concat([{ id: uid("audit"), action: "Linked product details synced", date: syncDate, changes }]) };
         });
         if (recipeInventoryAdjustments.length) {
           next.components = old.components.map((component) => {
@@ -3150,11 +3180,9 @@ export default function App() {
         }
       } else if (type === "listing") {
         const product = old.products.find((x) => x.id === values.productId);
-        const existingListing = record ? old.listings.find((item) => item.id === record.id) : null;
-        const existingListingProduct = existingListing && old.products.find((item) => item.id === existingListing.productId);
-        const listingName = existingListing && existingListing.productId === product.id && existingListing.productName && existingListingProduct && existingListing.productName !== existingListingProduct.name
-          ? existingListing.productName
-          : product.name;
+        const listingNameOverride = String(values.listingNameOverride || "").trim();
+        const listingName = listingNameOverride || product.name;
+        const descriptionSource = values.descriptionSource === "product" ? "product" : "manual";
         const marketplaces = Array.isArray(values.marketplaces) ? values.marketplaces : (values.marketplace ? [values.marketplace] : []);
         const listingSku = String(values.listingSku || (record && record.listingSku) || ("LIST-" + String(firstAvailableSkuNumber(old.listings, "listingSku", "LIST-")).padStart(3, "0"))).trim();
         const requestedStatus = values.status || "Draft";
@@ -3164,7 +3192,10 @@ export default function App() {
           productId: product.id, productName: listingName, productSku: product.sku, listingSku,
           marketplaces, marketplace: marketplaces.join(", "), status: listingStatus, startDate,
           price: Math.max(0, asNumber(values.price, product.price)),
-          description: String(values.description || "").trim(),
+          listingNameOverride,
+          descriptionSource,
+          description: descriptionSource === "product" ? String(product.description || "").trim() : String(values.description || "").trim(),
+          productDescriptionSnapshot: String(product.description || "").trim(),
           colors: values.colors || "", materials: values.materials || "", sizes: values.sizes || "", gender: values.gender || "", condition: values.condition || "Handmade",
           packageWeight: Math.max(0, asNumber(values.packageWeight, product.packageWeight || 0)), packageWeightUnit: values.packageWeightUnit || product.packageWeightUnit || "oz",
           discountPlans: record ? (record.discountPlans || []) : [],
@@ -3656,11 +3687,12 @@ export default function App() {
       ...old,
       activeShift: {
         id: uid("shift"), clockIn: Date.now(), date: localDateKey(new Date()), breakMs: 0, breakStartedAt: null,
-        taskIds: shiftTaskIds.slice(), taskTitles: taskTitlesFor(shiftTaskIds, old.tasks), workNote: shiftWorkNote.trim(),
+        taskIds: shiftTaskIds.slice(), taskTitles: taskTitlesFor(shiftTaskIds, old.tasks), workNote: shiftWorkNote.trim(), projectName: shiftProjectName.trim(),
       },
     }));
     setShiftTaskIds([]);
     setShiftWorkNote("");
+    setShiftProjectName("");
   };
 
   const startBreak = () => setData((old) => old.activeShift && !old.activeShift.breakStartedAt
@@ -3703,10 +3735,10 @@ export default function App() {
     setData((old) => {
       if (updated.mode === "active") {
         if (!old.activeShift || old.activeShift.id !== updated.id) return old;
-        return { ...old, activeShift: { ...old.activeShift, date: updated.date, clockIn: updated.clockIn, breakMs: updated.breakMs, taskIds: updated.taskIds, taskTitles: updated.taskTitles, workNote: updated.workNote } };
+        return { ...old, activeShift: { ...old.activeShift, date: updated.date, clockIn: updated.clockIn, breakMs: updated.breakMs, taskIds: updated.taskIds, taskTitles: updated.taskTitles, workNote: updated.workNote, projectName: updated.projectName } };
       }
       if (updated.mode === "timer") return { ...old, timerSessions: (old.timerSessions || []).map((session) => session.id === updated.id ? { ...session, date: updated.date, startedAt: updated.clockIn, endedAt: updated.clockOut, durationMs: updated.durationMs, taskIds: updated.taskIds, taskTitles: updated.taskTitles, workNote: updated.workNote, label: updated.label || "Focus session", editedAt: new Date().toISOString() } : session) };
-      return { ...old, timeSessions: (old.timeSessions || []).map((session) => session.id === updated.id ? { ...session, date: updated.date, clockIn: updated.clockIn, clockOut: updated.clockOut, breakMs: updated.breakMs, durationMs: updated.durationMs, taskIds: updated.taskIds, taskTitles: updated.taskTitles, workNote: updated.workNote, editedAt: new Date().toISOString() } : session) };
+      return { ...old, timeSessions: (old.timeSessions || []).map((session) => session.id === updated.id ? { ...session, date: updated.date, clockIn: updated.clockIn, clockOut: updated.clockOut, breakMs: updated.breakMs, durationMs: updated.durationMs, taskIds: updated.taskIds, taskTitles: updated.taskTitles, workNote: updated.workNote, projectName: updated.projectName, editedAt: new Date().toISOString() } : session) };
     });
     setTimeEdit(null);
   };
@@ -4329,8 +4361,12 @@ export default function App() {
   const visibleExpenses = db.expenses.filter((expense) => !search || [expense.description, expense.category, expense.notes].join(" ").toLowerCase().includes(search.toLowerCase()));
 
   const renderDashboard = () => {
-    const todayWorkMs = (db.timeSessions || []).filter((session) => session.date === TODAY).reduce((sum, session) => sum + (Number(session.durationMs) || 0), 0);
+    const todaySessions = (db.timeSessions || []).filter((session) => session.date === TODAY).sort((a, b) => Number(b.clockIn) - Number(a.clockIn));
+    const todayWorkMs = todaySessions.reduce((sum, session) => sum + (Number(session.durationMs) || 0), 0);
     const activeWorkMs = db.activeShift ? Math.max(0, clockNow - db.activeShift.clockIn - (Number(db.activeShift.breakMs) || 0) - (db.activeShift.breakStartedAt ? clockNow - db.activeShift.breakStartedAt : 0)) : 0;
+    const todayActiveWorkMs = db.activeShift && db.activeShift.date === TODAY ? activeWorkMs : 0;
+    const todayBreakMs = todaySessions.reduce((sum, session) => sum + (Number(session.breakMs) || 0), 0)
+      + (db.activeShift && db.activeShift.date === TODAY ? (Number(db.activeShift.breakMs) || 0) + (db.activeShift.breakStartedAt ? Math.max(0, clockNow - db.activeShift.breakStartedAt) : 0) : 0);
     const dashboardRange = periodDateRange(dashboardPeriod, dashboardAnchor) || { start: TODAY, end: TODAY };
     const inDashboardPeriod = (record) => {
       const date = parseDateInput(record.date) || String(record.date || "").slice(0, 10);
@@ -4377,6 +4413,11 @@ export default function App() {
       componentId, ...usage,
     })).sort((left, right) => String(left.component && left.component.name || "Missing component").localeCompare(String(right.component && right.component.name || "Missing component")));
     const soldListingsNeedArchive = activeListings.filter((item) => item.needsArchive);
+    const listingsNeedingDescriptionReview = db.listings.filter((listing) => {
+      if (!active(listing) || (listing.descriptionSource && listing.descriptionSource !== "product")) return false;
+      const product = db.products.find((item) => item.id === listing.productId);
+      return !!product && String(listing.description || "").trim() !== String(product.description || "").trim();
+    });
     const shopReviews = db.reviews || [];
     const averageStars = shopReviews.length ? (shopReviews.reduce((sum, item) => sum + (Number(item.stars) || 0), 0) / shopReviews.length).toFixed(1) : "—";
     const dashboardStatuses = Array.from(new Set([...(fulfillmentStatuses || []), ...db.orders.map((order) => order.status).filter(Boolean)]));
@@ -4399,6 +4440,7 @@ export default function App() {
       ...orderNeedsAttention.map((item) => ({ id: "order:" + item.id, icon: "▣", title: (item.orderSku || "Sale") + " needs attention", detail: (item.items || []).map((line) => line.productName + " × " + line.quantity).join(", ") + " · " + (item.status || "Status not set") + " · " + dateLabel(item.date), screen: "Orders" })),
       ...overdueTasks.map((item) => ({ id: "task:" + item.id, icon: "✓", title: "Overdue: " + item.title, detail: (item.category || "Task") + " · Due " + dateLabel(item.dueDate) + (item.notes ? " · " + item.notes : ""), screen: "Calendar" })),
       ...soldListingsNeedArchive.map((item) => ({ id: "listing:" + item.id, icon: "▤", title: item.productName + " sold out", detail: (item.listingSku || "Listing SKU") + " · archive the listing or relist after making more stock", screen: "Listings" })),
+      ...listingsNeedingDescriptionReview.map((listing) => ({ id: "listing-description:" + listing.id, icon: "▤", title: listing.descriptionSource === "product" ? "Product description changed · " + listing.productName : "Review listing description · " + listing.productName, detail: listing.descriptionSource === "product" ? "The product description changed since you copied it. Review the listing and update the marketplace copy when you are ready." : "This listing and its linked product have different descriptions. Review them and copy the product text if you want them to match.", screen: "Listings" })),
     ];
     const savedDismissals = db.dashboardDismissedAttention || [];
     const attentionItems = allAttentionItems.filter((item) => !savedDismissals.some((dismissed) => dismissed.id === item.id));
@@ -4468,7 +4510,16 @@ export default function App() {
       time: (
         <>
           <View style={styles.sectionHeadingRow}><Text style={styles.sectionTitle}>Today’s work shift</Text><Pressable onPress={() => navigateToScreen("Calendar")}><Text style={styles.actionText}>Open calendar ›</Text></Pressable></View>
-          <Card><View style={styles.cardTop}><View style={styles.flex}><Text style={styles.recordTitle}>{db.activeShift ? "You are clocked in" : "Work time recorded"}</Text><Text style={styles.recordMeta}>{db.activeShift && db.activeShift.breakStartedAt ? "On break · " : db.activeShift ? "Shift in progress · " : "Today · "}{formatDuration(todayWorkMs + activeWorkMs)}</Text></View><Pill text={db.activeShift ? (db.activeShift.breakStartedAt ? "On break" : "Clocked in") : "Clocked out"} tone={db.activeShift ? "green" : "neutral"} /></View><View style={styles.actionRow}><Action label={db.activeShift ? "Open shift tools" : "Clock in"} onPress={() => { if (!db.activeShift) clockIn(); else navigateToScreen("Calendar"); }} /></View></Card>
+          <Card>
+            <View style={styles.cardTop}><View style={styles.flex}><Text style={styles.recordTitle}>{db.activeShift ? "You are clocked in" : "Work time recorded"}</Text><Text style={styles.recordMeta}>Today · Worked {formatDuration(todayWorkMs + todayActiveWorkMs)} · Breaks {formatDuration(todayBreakMs)}</Text>
+              {db.activeShift ? <Text style={styles.recordMeta}>Started {formatTimeForDisplay(clockTimeLabel(db.activeShift.clockIn))}{db.activeShift.projectName ? " · Project: " + db.activeShift.projectName : ""}</Text> : todaySessions[0] ? <Text style={styles.recordMeta}>Last shift {formatTimeForDisplay(clockTimeLabel(todaySessions[0].clockIn))}–{formatTimeForDisplay(clockTimeLabel(todaySessions[0].clockOut))}</Text> : <Text style={styles.recordMeta}>No shift logged today</Text>}
+              {db.activeShift && db.activeShift.taskTitles && db.activeShift.taskTitles.length ? <Text style={styles.bodyText}>Tasks: {db.activeShift.taskTitles.join(", ")}</Text> : null}
+              {!db.activeShift && todaySessions[0] && todaySessions[0].projectName ? <Text style={styles.recordMeta}>Project: {todaySessions[0].projectName}</Text> : null}
+              {!db.activeShift && todaySessions[0] && todaySessions[0].taskTitles && todaySessions[0].taskTitles.length ? <Text style={styles.bodyText}>Tasks: {todaySessions[0].taskTitles.join(", ")}</Text> : null}
+              {db.activeShift && db.activeShift.workNote ? <Text style={styles.bodyText}>{db.activeShift.workNote}</Text> : null}
+            </View><Pill text={db.activeShift ? (db.activeShift.breakStartedAt ? "On break" : "Clocked in") : "Clocked out"} tone={db.activeShift ? "green" : "neutral"} /></View>
+            <View style={styles.actionRow}>{db.activeShift ? <><Action label={db.activeShift.breakStartedAt ? "End break" : "Start break"} onPress={db.activeShift.breakStartedAt ? endBreak : startBreak} /><Action label="Open shift tools" quiet onPress={() => navigateToScreen("Time")} /><Action label="Clock out" quiet onPress={clockOut} /></> : <Action label="Clock in · choose task & project" onPress={() => navigateToScreen("Time")} />}</View>
+          </Card>
         </>
       ),
       attention: (
@@ -4728,6 +4779,18 @@ export default function App() {
     const listingChannels = new Set(activeListings.flatMap((item) => item.marketplaces || (item.marketplace ? String(item.marketplace).split(",").map((channel) => channel.trim()) : [])).filter(Boolean));
     const representedProducts = new Set(activeListings.map((item) => item.productId).filter(Boolean));
     const combinedAskingPrices = activeListings.reduce((sum, item) => sum + (Number(item.price) || 0), 0);
+    const listingDescriptionNeedsUpdate = (listing) => {
+      const product = db.products.find((row) => row.id === listing.productId);
+      return !!product && listing.descriptionSource === "product"
+        && String(listing.productDescriptionSnapshot == null ? listing.description || "" : listing.productDescriptionSnapshot).trim() !== String(product.description || "").trim()
+        && String(listing.description || "").trim() !== String(product.description || "").trim();
+    };
+    const productDescriptionDiffers = (listing) => {
+      const product = db.products.find((row) => row.id === listing.productId);
+      return !!product && String(listing.description || "").trim() !== String(product.description || "").trim();
+    };
+    const descriptionsToUpdate = activeListings.filter(listingDescriptionNeedsUpdate);
+    const descriptionsToReview = activeListings.filter(productDescriptionDiffers);
     const channelsForListing = (item) => Array.isArray(item.marketplaces) ? item.marketplaces : (item.marketplace ? String(item.marketplace).split(",").map((channel) => channel.trim()).filter(Boolean) : []);
     const payoutEstimatesForListing = (item, price) => channelsForListing(item).map((channel) => {
       const rule = (db.marketplaceFeeRules || {})[channel] || {};
@@ -4735,11 +4798,28 @@ export default function App() {
       return { channel, payout: Math.max(0, price - fee), configured: Number(rule.percent) > 0 || Number(rule.fixed) > 0 };
     });
     const editListing = (item) => beginEdit("listing", { ...item, price: String(item.price), marketplaces: item.marketplaces || (item.marketplace ? [item.marketplace] : []) });
+    const copyProductDescriptionToListing = (item) => setData((old) => {
+      const product = old.products.find((row) => row.id === item.productId);
+      if (!product) return old;
+      const description = String(product.description || "").trim();
+      const timestamp = new Date().toISOString();
+      return {
+        ...old,
+        listings: old.listings.map((listing) => {
+          if (listing.id !== item.id) return listing;
+          const changes = [];
+          if (String(listing.description || "") !== description) changes.push({ field: "marketplace description", from: listing.description || "", to: description });
+          if (listing.descriptionSource !== "product") changes.push({ field: "description source", from: listing.descriptionSource || "manual", to: "product" });
+          return { ...listing, description, descriptionSource: "product", productDescriptionSnapshot: description, updatedAt: timestamp, auditLog: changes.length ? (listing.auditLog || []).concat([{ id: uid("audit"), action: "Product description copied to listing", date: timestamp, changes }]) : listing.auditLog || [] };
+        }),
+      };
+    });
     return (
       <>
         <View style={styles.infoBanner}><Text style={styles.infoBannerTitle}>Listings, promotion plans, and relists</Text><Text style={styles.infoBannerText}>Search and filter your marketplace listings. Sold-out products are flagged here so you can archive a listing or relist it after making more stock. Archiving a listing hides only that marketplace offer and never returns materials. Sold units stay consumed; archiving a product returns materials only for finished units still in stock.</Text><View style={styles.actionRow}><Action label="＋ Add listing" onPress={() => beginAdd("listing")} /><Action label="Bulk edit names & descriptions" quiet onPress={() => setBulkEditType("listing")} /><Action label="Listing analytics" quiet onPress={() => navigateToScreen("Listing Analytics")} /></View></View>
         <View style={styles.metricGrid}><Metric label="Live now" value={String(actualListings)} /><Metric label="Need archiving" value={String(needsArchive)} /><Metric label="Discounts planned" value={String(scheduledDiscounts)} /><Metric label="Relists coming up" value={String(relistsDue)} /></View>
-        <View style={styles.metricGrid}><Metric label="Sales channels" value={String(listingChannels.size)} /><Metric label="Products represented" value={String(representedProducts.size)} /><Metric label="Combined asking prices" value={money(combinedAskingPrices, db.currency)} /></View>
+        <View style={styles.metricGrid}><Metric label="Sales channels" value={String(listingChannels.size)} /><Metric label="Products represented" value={String(representedProducts.size)} /><Metric label="Combined asking prices" value={money(combinedAskingPrices, db.currency)} /><Metric label="Product descriptions to review" value={String(descriptionsToReview.length)} /></View>
+        {descriptionsToUpdate.length ? <Card><Text style={styles.infoBannerTitle}>Product descriptions changed</Text><Text style={styles.bodyText}>{descriptionsToUpdate.length} listing{descriptionsToUpdate.length === 1 ? " has" : "s have"} a newer product description. Review the listing before copying so you can keep marketplace wording that needs to stay different.</Text>{descriptionsToUpdate.slice(0, 5).map((item) => <View key={item.id} style={styles.detailLine}><View style={styles.flex}><Text style={styles.detailLabel}>{item.productName}</Text><Text style={styles.fieldHint}>{item.marketplace || (item.marketplaces || []).join(", ") || "Marketplace not saved"}</Text></View><Action label="Update description" onPress={() => copyProductDescriptionToListing(item)} /></View>)}</Card> : null}
          {needsArchive ? <Card><Text style={styles.cardTitle}>Sold-out listings need attention</Text>{activeListings.filter((item) => item.needsArchive).map((item) => {
            const product = db.products.find((entry) => entry.id === item.productId);
            return <View key={item.id} style={styles.soldOutListingRow}><View style={styles.soldOutListingInfo}><Text style={styles.recordTitle} numberOfLines={2}>{item.productName}</Text><Text style={styles.recordMeta}>{item.listingSku} · {item.marketplace || (item.marketplaces || []).join(", ") || "Marketplace not saved"} · out of stock</Text></View><View style={styles.soldOutListingActions}><Action label="Review" quiet onPress={() => openDetails("listing", item)} />{product && Number(product.inventory) > 0 ? <Action label="Relist now" onPress={() => setRelistEditor(item)} /> : product ? <Action label="Make more" quiet onPress={() => { setProductionProduct(product.id); navigateToScreen("Production"); }} /> : null}<Action label="Archive" quiet onPress={() => archiveRecord("listings", item, "listing")} /></View></View>;
@@ -4763,7 +4843,7 @@ export default function App() {
         </> : null}
         <View style={styles.sectionHeadingRow}><Text style={styles.sectionTitle}>{showArchivedListings ? "Archived listings" : "Your marketplace listings"}</Text></View>
         {pagedListings.length ? pagedListings.map((item) => (
-          <Card key={item.id}><View style={styles.cardTop}><View style={styles.flex}><Text style={styles.recordTitle}>{item.productName}</Text><Text style={styles.recordMeta}>{item.listingSku || "LIST SKU missing"} · Product {item.productSku || "SKU not saved"}</Text><Text style={styles.recordMeta}>{item.marketplace || "Marketplace not saved"} · {item.price != null ? money(item.price, db.currency) : "Price not saved"} · {listingAgeText(item)}</Text>{item.description ? <Text numberOfLines={2} style={styles.bodyText}>{item.description}</Text> : null}{(() => { const plans = item.discountPlans || []; const activePlan = plans.filter((plan) => plan.startDate <= TODAY && (!plan.endDate || plan.endDate >= TODAY)).sort((a, b) => b.startDate.localeCompare(a.startDate))[0]; const price = Math.max(0, asNumber(item.price, 0)) * (activePlan ? 1 - Number(activePlan.percent) / 100 : 1); const estimates = payoutEstimatesForListing(item, price); return estimates.some((estimate) => estimate.configured) ? <Text numberOfLines={2} style={styles.recordMeta}>Est. after fees: {estimates.map((estimate) => estimate.channel + " " + money(estimate.payout, db.currency)).join(" · ")}</Text> : null; })()}</View><View style={{ alignItems: "flex-end", gap: 6 }}><Pill text={item.archived ? "Archived" : item.needsArchive ? "Sold · archive this listing" : item.status === "Paused" ? "Paused" : item.startDate && item.startDate > TODAY ? "Planned" : item.status || "Draft"} tone={item.needsArchive ? "red" : item.archived ? "neutral" : item.status === "Active" ? "green" : "amber"} /><Action label="Duplicate" quiet onPress={() => duplicateRecord("listing", item)} /><Action label="Edit" quiet onPress={() => editListing(item)} /></View></View>
+          <Card key={item.id}><View style={styles.cardTop}><View style={styles.flex}><Text style={styles.recordTitle}>{item.productName}</Text>{item.listingNameOverride ? <Text style={styles.recordMeta}>Custom listing name · product name changes will not rename this listing</Text> : <Text style={styles.recordMeta}>Following product name</Text>}<Text style={styles.recordMeta}>{item.listingSku || "LIST SKU missing"} · Product {item.productSku || "SKU not saved"}</Text><Text style={styles.recordMeta}>{item.marketplace || "Marketplace not saved"} · {item.price != null ? money(item.price, db.currency) : "Price not saved"} · {listingAgeText(item)}</Text>{item.description ? <Text numberOfLines={2} style={styles.bodyText}>{item.description}</Text> : null}{listingDescriptionNeedsUpdate(item) ? <Text style={styles.errorText}>Product description changed. Update the marketplace copy when ready.</Text> : productDescriptionDiffers(item) ? <Text style={styles.fieldHint}>Marketplace and product descriptions differ. Review before copying.</Text> : null}{(() => { const plans = item.discountPlans || []; const activePlan = plans.filter((plan) => plan.startDate <= TODAY && (!plan.endDate || plan.endDate >= TODAY)).sort((a, b) => b.startDate.localeCompare(a.startDate))[0]; const price = Math.max(0, asNumber(item.price, 0)) * (activePlan ? 1 - Number(activePlan.percent) / 100 : 1); const estimates = payoutEstimatesForListing(item, price); return estimates.some((estimate) => estimate.configured) ? <Text numberOfLines={2} style={styles.recordMeta}>Est. after fees: {estimates.map((estimate) => estimate.channel + " " + money(estimate.payout, db.currency)).join(" · ")}</Text> : null; })()}</View><View style={{ alignItems: "flex-end", gap: 6 }}><Pill text={item.archived ? "Archived" : item.needsArchive ? "Sold · archive this listing" : item.status === "Paused" ? "Paused" : item.startDate && item.startDate > TODAY ? "Planned" : item.status || "Draft"} tone={item.needsArchive ? "red" : item.archived ? "neutral" : item.status === "Active" ? "green" : "amber"} /><Action label="Duplicate" quiet onPress={() => duplicateRecord("listing", item)} /><Action label="Edit" quiet onPress={() => editListing(item)} /><Action label={listingDescriptionNeedsUpdate(item) ? "Update description from product" : "Copy product description"} quiet onPress={() => copyProductDescriptionToListing(item)} /></View></View>
             <View style={styles.actionRow}><Action label={expandedListingIds.includes(item.id) ? "Hide details" : "Show details"} quiet onPress={() => setExpandedListingIds((old) => old.includes(item.id) ? [] : [item.id])} /></View>
             {expandedListingIds.includes(item.id) ? <>
             {(() => {
@@ -4776,7 +4856,7 @@ export default function App() {
               const hasFeeEstimate = payoutEstimates.some((estimate) => estimate.configured);
               return <>
                 <View style={styles.recipePreview}><Text style={styles.fieldLabel}>Linked product and materials</Text>{product ? <><Text style={styles.bodyText}>{product.name} · {product.sku} · {Number(product.inventory) || 0} finished units in stock · {(product.recipe || []).length} component types in recipe</Text>{(product.recipe || []).map((part) => { const component = db.components.find((row) => row.id === part.componentId); return <Text key={part.componentId} style={styles.fieldHint}>{part.name}: {part.quantity} {part.unit || component && component.unit || "units"} per product · {component ? component.quantity + " available" : "component missing"}</Text>; })}<View style={styles.actionRow}><Action label="Open product catalog" quiet onPress={() => navigateToScreen("Products")} />{product.archived ? <Action label="Restore product and materials" onPress={() => restoreRecord("products", product)} /> : <Action label={Number(product.inventory) > 0 ? "Archive product · return materials for unsold stock" : "Archive product · no materials to return"} onPress={() => archiveRecord("products", product, "product")} />}</View><Text style={styles.fieldHint}>Archiving this listing alone never returns materials. Product archiving returns materials only for finished units still in stock; sold units stay consumed.</Text></> : <Text style={styles.bodyText}>The linked product is missing. Check the product catalog and this listing’s saved link.</Text>}</View>
-                <View style={styles.recipePreview}><Text style={styles.fieldLabel}>Marketplace description</Text>{item.description ? <Text style={styles.bodyText}>{item.description}</Text> : <Text style={styles.fieldHint}>No marketplace description saved yet.</Text>}<View style={styles.actionRow}><Action label={item.description ? "Edit description" : "Add description"} quiet onPress={() => editListing(item)} /></View></View>
+                <View style={styles.recipePreview}><Text style={styles.fieldLabel}>Marketplace description</Text>{item.description ? <Text style={styles.bodyText}>{item.description}</Text> : <Text style={styles.fieldHint}>No marketplace description saved yet.</Text>}{item.descriptionSource === "product" ? <Text style={listingDescriptionNeedsUpdate(item) ? styles.errorText : styles.fieldHint}>{listingDescriptionNeedsUpdate(item) ? "The product description changed since this copy was made." : "Copied from the linked product."}</Text> : productDescriptionDiffers(item) ? <Text style={styles.fieldHint}>This listing keeps its own marketplace description. The linked product text is different.</Text> : <Text style={styles.fieldHint}>This listing description currently matches the linked product.</Text>}<View style={styles.actionRow}><Action label={item.description ? "Edit description" : "Add description"} quiet onPress={() => editListing(item)} /><Action label={listingDescriptionNeedsUpdate(item) ? "Update from product" : "Copy product description"} onPress={() => copyProductDescriptionToListing(item)} /></View></View>
                 <View style={styles.channelChipRow}>{channels.map((channel) => <View key={channel} style={styles.channelChip}><Text style={styles.channelChipText}>{channel}</Text></View>)}</View>
                 <View style={styles.detailRow}><Text style={styles.detailText}>List price {money(item.price, db.currency)}</Text><Pill text={currentPlan ? `${currentPlan.percent}% off now` : `${discountPlans.length} discount plan${discountPlans.length === 1 ? "" : "s"}`} tone={currentPlan ? "green" : "neutral"} /></View>
                 {currentPlan ? <Text style={styles.bodyText}>Current sale price: {money(Number(item.price) * (1 - Number(currentPlan.percent) / 100), db.currency)} · through {currentPlan.endDate ? dateLabel(currentPlan.endDate) : "no end date"}</Text> : null}
@@ -5254,13 +5334,29 @@ export default function App() {
       { label: "Discount plans", value: "Discount plans" },
       { label: "Relisting plans", value: "Relisting plans" },
       { label: "Schedules", value: "Schedules" },
+      { label: "Time tracking", value: "Time tracking" },
     ];
     const planStateOptions = [{ label: "Planned and done", value: "All" }, { label: "Planned", value: "Planned" }, { label: "Done", value: "Done" }];
     const dateKey = (value) => parseDateInput(value) || timestampDateKey(value) || "";
+    const shiftCalendarItems = (db.timeSessions || []).flatMap((session) => {
+      const due = dateKey(session.date) || dateKey(session.clockIn);
+      if (!due) return [];
+      const shift = { ...session, itemType: "Work shift", due, title: "Work shift · " + formatTimeForDisplay(clockTimeLabel(session.clockIn)) + "–" + formatTimeForDisplay(clockTimeLabel(session.clockOut)) };
+      return [shift, ...(Number(session.breakMs) > 0 ? [{ ...session, id: session.id + ":break", parentShiftId: session.id, itemType: "Break", due, title: "Breaks · " + formatDuration(session.breakMs) }] : [])];
+    });
+    if (db.activeShift) {
+      const due = dateKey(db.activeShift.date) || dateKey(db.activeShift.clockIn);
+      if (due) {
+        shiftCalendarItems.push({ ...db.activeShift, itemType: "Work shift", isActiveShift: true, due, title: "Work shift · Clocked in " + formatTimeForDisplay(clockTimeLabel(db.activeShift.clockIn)) });
+        const activeBreakMs = (Number(db.activeShift.breakMs) || 0) + (db.activeShift.breakStartedAt ? Math.max(0, clockNow - db.activeShift.breakStartedAt) : 0);
+        if (activeBreakMs > 0) shiftCalendarItems.push({ ...db.activeShift, id: db.activeShift.id + ":break", parentShiftId: db.activeShift.id, itemType: "Break", isActiveShift: true, due, title: (db.activeShift.breakStartedAt ? "Break in progress · " : "Breaks · ") + formatDuration(activeBreakMs), breakMs: activeBreakMs });
+      }
+    }
     const calendarItems = [
       ...db.events.filter(active).map((item) => ({ ...item, itemType: "Event", due: dateKey(item.date) })),
       ...db.tasks.filter((item) => active(item) && ((!item.done && item.dueDate) || (item.done && item.completedAt))).map((item) => ({ ...item, itemType: "Task", due: dateKey(item.done ? item.completedAt : item.dueDate) })),
       ...(db.workPlans || []).filter((item) => item.date).map((item) => ({ ...item, itemType: "Work plan", due: dateKey(item.date) })),
+      ...shiftCalendarItems,
       ...db.orders.filter((item) => !item.archived).flatMap((item) => {
         const orderTitle = (item.orderSku || "Sale") + " · " + ((item.items || []).map((line) => line.productName).join(", ") || "Order");
         const saleDay = dateKey(item.date) || dateKey(item.createdAt);
@@ -5284,6 +5380,7 @@ export default function App() {
     ].filter((item) => item.due).sort((a, b) => String(a.due).localeCompare(String(b.due)));
     const itemCategory = (item) => item.itemType === "Order update" ? "Sale statuses"
       : item.itemType === "Listing plan" ? (item.discountPlan ? "Discount plans" : "Relisting plans")
+        : ["Work shift", "Break"].includes(item.itemType) ? "Time tracking"
         : ["Task", "Event", "Work plan"].includes(item.itemType) ? "Schedules" : "Other";
     const visibleCalendarItems = calendarItems.filter((item) => {
       const category = itemCategory(item);
@@ -5331,6 +5428,8 @@ export default function App() {
       const itemMeta = item.itemType === "Task" ? "Task · " + (item.category || "Other") + " · " + (item.priority || "Normal")
         : item.itemType === "Work plan" ? "Work block · " + formatTimeForDisplay(item.startTime) + "–" + formatTimeForDisplay(item.endTime)
           : item.itemType === "Event" ? "Event · " + (item.kind || "Business event")
+            : item.itemType === "Work shift" ? (item.isActiveShift ? (item.breakStartedAt ? "Clocked in · on break" : "Clocked in · in progress") : "Clocked in and out") + " · Worked " + formatDuration(item.isActiveShift ? Math.max(0, clockNow - item.clockIn - (Number(item.breakMs) || 0) - (item.breakStartedAt ? clockNow - item.breakStartedAt : 0)) : item.durationMs) + " · Breaks " + formatDuration((Number(item.breakMs) || 0) + (item.isActiveShift && item.breakStartedAt ? Math.max(0, clockNow - item.breakStartedAt) : 0))
+              : item.itemType === "Break" ? (item.isActiveShift && item.breakStartedAt ? "Current shift · started " + formatTimeForDisplay(clockTimeLabel(item.breakStartedAt)) : "Break time recorded with shift")
         : isPlan ? (item.discountPlan ? "Discount plan · " : "Relisting plan · ") + item.planLabel + (item.marketplace || (item.marketplaces || []).length ? " · " + (item.marketplace || (item.marketplaces || []).join(", ")) : "")
               : "Sale status · " + (item.marketplace || "Direct");
       const listingEditorRecord = { ...item, price: String(item.price), marketplaces: item.marketplaces || (item.marketplace ? [item.marketplace] : []) };
@@ -5339,7 +5438,10 @@ export default function App() {
         setCalendarMonth(new Date(date.getFullYear(), date.getMonth(), 1));
         setSelectedDay(item.due);
       };
-      const itemActions = isOrderUpdate ? <>
+      const itemActions = ["Work shift", "Break"].includes(item.itemType) ? <>
+        {item.itemType === "Work shift" ? <Action label="Edit shift" quiet onPress={() => openTimeEditor(item.isActiveShift ? "active" : "session", item)} /> : null}
+        <Action label="Open time tracking" quiet onPress={() => navigateToScreen("Time")} />
+      </> : isOrderUpdate ? <>
         <Action label="Change status" quiet onPress={() => openOrder(item)} />
         <Action label="Edit update" quiet onPress={() => setTimelineEditor({ orderId: item.orderId, index: item.timelineIndex, date: item.due, status: item.progressStatus })} />
         <Action label="Delete update" quiet onPress={() => deleteOrderTimelineStep(item, item.timelineIndex)} />
@@ -5368,6 +5470,10 @@ export default function App() {
             <Text style={styles.recordMeta}>{itemMeta}</Text>
             {isOrderUpdate && item.trackingNumber ? <Text style={styles.recordMeta}>Tracking {item.trackingNumber}{item.trackingCarrier ? " · " + item.trackingCarrier : ""}</Text> : null}
             {item.notes ? <Text style={styles.bodyText}>{item.notes}</Text> : null}
+            {item.itemType === "Work shift" && item.projectName ? <Text style={styles.recordMeta}>Project: {item.projectName}</Text> : null}
+            {item.itemType === "Work shift" && item.taskTitles && item.taskTitles.length ? <Text style={styles.recordMeta}>Tasks: {item.taskTitles.join(", ")}</Text> : null}
+            {item.itemType === "Work shift" && item.workNote ? <Text style={styles.bodyText}>{item.workNote}</Text> : null}
+            {item.itemType === "Work shift" && item.isActiveShift ? <Text style={styles.fieldHint}>Clocked in at {formatTimeForDisplay(clockTimeLabel(item.clockIn))}{item.breakStartedAt ? " · Break started at " + formatTimeForDisplay(clockTimeLabel(item.breakStartedAt)) : ""}</Text> : null}
           </Pressable>
           <View style={styles.calendarItemPills}>
             <Pill text={dateLabel(item.due)} tone="neutral" />
@@ -5384,10 +5490,12 @@ export default function App() {
     if (calendarCategoryFilter === "All" || calendarCategoryFilter === "Sale statuses") filterSummaryParts.push(selectedStatusLabel);
     if (calendarCategoryFilter === "All" || calendarCategoryFilter === "Discount plans" || calendarCategoryFilter === "Relisting plans") filterSummaryParts.push(selectedPlanLabel);
     return <>
-      <ScreenDashboardHeader title="Calendar" description="Order status changes, discount start and end dates, and relisting plans update automatically. Add tasks, events, and work blocks for your own schedule." metrics={[
+      <ScreenDashboardHeader title="Calendar" description="Order changes, listing dates, tasks, planned work, and your clocked shifts and break totals appear here." metrics={[
         { label: "Sale statuses", value: String(calendarItems.filter((item) => item.itemType === "Order update").length) },
         { label: "Discount dates", value: String(calendarItems.filter((item) => item.discountPlan).length) },
         { label: "Relist plans", value: String(calendarItems.filter((item) => item.itemType === "Listing plan" && !item.discountPlan).length) },
+        { label: "Work shifts", value: String(calendarItems.filter((item) => item.itemType === "Work shift").length) },
+        { label: "Break entries", value: String(calendarItems.filter((item) => item.itemType === "Break").length) },
       ]} actions={[
         { label: "＋ Event", onPress: () => beginAdd("event", { date: selectedDay }) },
         { label: "＋ Task", onPress: () => beginAdd("task", { dueDate: selectedDay }), quiet: true },
@@ -5400,7 +5508,7 @@ export default function App() {
         <Field field={{ label: "Show", options: categoryOptions }} value={calendarCategoryFilter} onChange={setCalendarCategoryFilter} />
         {calendarCategoryFilter === "All" || calendarCategoryFilter === "Sale statuses" ? <Field field={{ label: "Sale status", options: orderStatusOptions }} value={calendarStatusFilter} onChange={setCalendarStatusFilter} /> : null}
         {calendarCategoryFilter === "All" || calendarCategoryFilter === "Discount plans" || calendarCategoryFilter === "Relisting plans" ? <Field field={{ label: "Plan status", options: planStateOptions }} value={calendarPlanStateFilter} onChange={setCalendarPlanStateFilter} /> : null}
-        <Text style={styles.fieldHint}>Sale status filters show each matching order timeline entry. Plan status filters show planned or completed discount and relisting dates.</Text>
+        <Text style={styles.fieldHint}>Sale status filters show each matching order timeline entry. Plan status filters show planned or completed discount and relisting dates. Time tracking includes clock-in/out shifts and their break totals.</Text>
       </SettingsAccordion>
       <Card style={styles.calendarCard}>
         <View style={styles.monthHeader}>
@@ -5420,7 +5528,7 @@ export default function App() {
       </View>
       <View style={[styles.calendarAgenda, wideLayout && styles.calendarAgendaWide]}>
       <SettingsAccordion title={dateLabel(selectedDay) + " · Day schedule"} subtitle={dayItems.length + " calendar item" + (dayItems.length === 1 ? "" : "s")} expanded={selectedDateExpanded} onPress={() => setSelectedDateExpanded((expanded) => !expanded)}>
-        {dayItems.length ? dayItems.map((item) => renderCalendarItem(item, false)) : <><Text style={styles.emptyTitle}>Nothing scheduled for this date</Text><Text style={styles.bodyText}>Sale status changes, discount dates, and relisting plans appear automatically. Add a task, event, or work block to plan this day.</Text></>}
+        {dayItems.length ? dayItems.map((item) => renderCalendarItem(item, false)) : <><Text style={styles.emptyTitle}>Nothing scheduled for this date</Text><Text style={styles.bodyText}>Sale updates, listing dates, time tracking, and scheduled tasks appear here. Add a task, event, work block, or start a shift.</Text></>}
         <View style={styles.actionRow}>
           <Action label="＋ Event" onPress={() => beginAdd("event", { date: selectedDay })} />
           <Action label="＋ Task" quiet onPress={() => beginAdd("task", { dueDate: selectedDay })} />
@@ -5428,7 +5536,7 @@ export default function App() {
         </View>
       </SettingsAccordion>
       <SettingsAccordion title="Next up" subtitle={upcomingItems.length + " upcoming item" + (upcomingItems.length === 1 ? "" : "s") + " · first " + nextUpItems.length} expanded={nextUpExpanded} onPress={() => setNextUpExpanded((expanded) => !expanded)}>
-        {nextUpItems.length ? nextUpItems.map((item) => renderCalendarItem(item, true)) : <><Text style={styles.bodyText}>Nothing upcoming matches these filters. Add a task, event, or work block, or change the calendar filters.</Text><View style={styles.actionRow}><Action label="＋ Add task" onPress={() => beginAdd("task", { dueDate: TODAY })} /><Action label="＋ Add event" quiet onPress={() => beginAdd("event", { date: TODAY })} /><Action label="＋ Work block" quiet onPress={() => beginAdd("workPlan", { date: TODAY })} /></View></>}
+        {nextUpItems.length ? nextUpItems.map((item) => renderCalendarItem(item, true)) : <><Text style={styles.bodyText}>Nothing upcoming matches these filters. Add a task, event, or work block, or review time tracking for a selected date.</Text><View style={styles.actionRow}><Action label="＋ Add task" onPress={() => beginAdd("task", { dueDate: TODAY })} /><Action label="＋ Add event" quiet onPress={() => beginAdd("event", { date: TODAY })} /><Action label="＋ Work block" quiet onPress={() => beginAdd("workPlan", { date: TODAY })} /><Action label="Open time tracking" quiet onPress={() => navigateToScreen("Time")} /></View></>}
         {upcomingItems.length > nextUpItems.length ? <Text style={styles.fieldHint}>Showing the first 10 upcoming items. Change the date or filters to browse more.</Text> : null}
       </SettingsAccordion>
       </View>
@@ -5485,6 +5593,7 @@ export default function App() {
           <Text style={styles.recordMeta}>{dateLabel(db.activeShift.date)} · Clocked in {new Date(db.activeShift.clockIn).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}{db.activeShift.breakStartedAt ? " · On break" : ""}</Text>
           <View style={styles.sectionHeadingRow}><Text style={styles.fieldLabel}>Tasks for this shift</Text><Action label="＋ Create task" quiet onPress={beginCreateShiftTask} /></View>
           <Field field={{ label: "Choose saved tasks", options: tasksForTime.map((task) => ({ label: task.title, value: task.id })), multiple: true, placeholder: "Choose one or more tasks" }} value={db.activeShift.taskIds || []} onChange={updateActiveShiftTasks} />
+          <Field field={{ label: "Project or collection (optional)", placeholder: "Example: Holiday collection" }} value={db.activeShift.projectName || ""} onChange={(projectName) => setData((old) => old.activeShift ? { ...old, activeShift: { ...old.activeShift, projectName } } : old)} />
           <Field field={{ label: "What else are you working on?", multiline: true, placeholder: "Add a note about this shift" }} value={db.activeShift.workNote || ""} onChange={(workNote) => setData((old) => old.activeShift ? { ...old, activeShift: { ...old.activeShift, workNote } } : old)} />
           <View style={styles.actionRow}>
             {db.activeShift.breakStartedAt ? <Action label="End break" onPress={endBreak} /> : <Action label="Start break" onPress={startBreak} />}
@@ -5496,6 +5605,7 @@ export default function App() {
           <Text style={styles.bodyText}>Start a shift to keep a record of your work time.</Text>
           <View style={styles.sectionHeadingRow}><Text style={styles.fieldLabel}>Tasks for this shift</Text><Action label="＋ Create task" quiet onPress={beginCreateShiftTask} /></View>
           <Field field={{ label: "Choose saved tasks", options: tasksForTime.map((task) => ({ label: task.title, value: task.id })), multiple: true, placeholder: "Choose one or more tasks" }} value={shiftTaskIds} onChange={setShiftTaskIds} />
+          <Field field={{ label: "Project or collection (optional)", placeholder: "Example: Holiday collection" }} value={shiftProjectName} onChange={setShiftProjectName} />
           <Field field={{ label: "What do you plan to work on?", multiline: true, placeholder: "Optional shift note" }} value={shiftWorkNote} onChange={setShiftWorkNote} />
           <Pressable style={styles.primaryButtonFull} onPress={clockIn}><Text style={styles.primaryButtonFullText}>Clock in</Text></Pressable>
         </>}
@@ -5516,7 +5626,7 @@ export default function App() {
         </>}
       </Card>
       <Text style={styles.sectionTitle}>Recent shifts</Text>
-       {recentSessions.length ? recentSessions.map((session) => <Card key={session.id} style={styles.historyCard}><View style={styles.cardTop}><View style={styles.flex}><Text style={styles.recordTitle}>{dateLabel(session.date)} · {new Date(session.clockIn).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}–{new Date(session.clockOut).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}</Text><Text style={styles.recordMeta}>Breaks: {formatDuration(session.breakMs || 0)} · Worked {formatDuration(session.durationMs)}</Text>{session.taskTitles && session.taskTitles.length ? <Text style={styles.bodyText}>Tasks: {session.taskTitles.join(", ")}</Text> : null}{session.workNote ? <Text style={styles.bodyText}>{session.workNote}</Text> : null}</View></View><View style={styles.actionRow}><Action label="Edit shift" onPress={() => openTimeEditor("session", session)} /><Action label="Delete shift" quiet onPress={() => deleteShiftSession(session)} /></View></Card>) : <Text style={styles.bodyText}>Completed shifts will appear here.</Text>}
+       {recentSessions.length ? recentSessions.map((session) => <Card key={session.id} style={styles.historyCard}><View style={styles.cardTop}><View style={styles.flex}><Text style={styles.recordTitle}>{dateLabel(session.date)} · {new Date(session.clockIn).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}–{new Date(session.clockOut).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}</Text><Text style={styles.recordMeta}>Breaks: {formatDuration(session.breakMs || 0)} · Worked {formatDuration(session.durationMs)}</Text>{session.projectName ? <Text style={styles.recordMeta}>Project: {session.projectName}</Text> : null}{session.taskTitles && session.taskTitles.length ? <Text style={styles.bodyText}>Tasks: {session.taskTitles.join(", ")}</Text> : null}{session.workNote ? <Text style={styles.bodyText}>{session.workNote}</Text> : null}</View></View><View style={styles.actionRow}><Action label="Edit shift" onPress={() => openTimeEditor("session", session)} /><Action label="Delete shift" quiet onPress={() => deleteShiftSession(session)} /></View></Card>) : <Text style={styles.bodyText}>Completed shifts will appear here.</Text>}
       <View style={styles.sectionHeadingRow}><View><Text style={styles.sectionTitle}>Plan your work</Text><Text style={styles.subtle}>{planPeriodLabel} · {formatHours(plannedMs)} planned</Text></View><Action label="＋ Plan work" onPress={() => beginAdd("workPlan", { date: defaultPlanDate })} /></View>
       <View style={styles.rangeSwitch}><Pressable onPress={() => { setPlanRange("week"); setPlanAnchor(new Date()); }} style={[styles.rangeButton, planRange === "week" && styles.rangeButtonSelected]}><Text style={[styles.rangeButtonText, planRange === "week" && styles.rangeButtonTextSelected]}>Week</Text></Pressable><Pressable onPress={() => { setPlanRange("month"); setPlanAnchor(new Date()); }} style={[styles.rangeButton, planRange === "month" && styles.rangeButtonSelected]}><Text style={[styles.rangeButtonText, planRange === "month" && styles.rangeButtonTextSelected]}>Month</Text></Pressable></View>
       <View style={styles.planningPeriodNav}><Pressable onPress={() => shiftPlanPeriod(-1)} style={styles.monthArrow}><Text style={styles.monthArrowText}>‹</Text></Pressable><Text style={styles.planningPeriodText}>{planPeriodLabel}</Text><Pressable onPress={() => shiftPlanPeriod(1)} style={styles.monthArrow}><Text style={styles.monthArrowText}>›</Text></Pressable></View>
