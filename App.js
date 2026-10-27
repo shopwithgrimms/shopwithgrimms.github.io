@@ -356,6 +356,8 @@ const EMPTY_DB = {
   tutorialCompleted: false,
   readAnnouncementIds: [],
   dismissedAnnouncementIds: [],
+  businessSummaryMessages: [],
+  businessSummaryPreferences: { enabled: true, daily: true, weekly: true, monthly: true },
   components: [],
   products: [],
   listings: [],
@@ -385,7 +387,7 @@ const EMPTY_DB = {
   nextOrderSku: 1,
 };
 
-const RECORD_COLLECTIONS = ["components", "products", "listings", "orders", "deletedOrders", "incomes", "reviews", "expenses", "tasks", "events", "ideas", "notes", "suppliers", "productions", "componentTransactions", "productTransactions", "purchases", "timeSessions", "timerSessions", "workPlans"];
+const RECORD_COLLECTIONS = ["components", "products", "listings", "orders", "deletedOrders", "incomes", "reviews", "expenses", "tasks", "events", "ideas", "notes", "suppliers", "productions", "componentTransactions", "productTransactions", "purchases", "timeSessions", "timerSessions", "workPlans", "businessSummaryMessages"];
 const DROPDOWN_ATTRIBUTE_FIELDS = { colors: "colors", materials: "materials", sizes: "sizes", genders: "gender" };
 
 const DROPDOWN_SETS = [
@@ -592,6 +594,9 @@ const normalizeDatabase = (saved) => {
   });
   source.readAnnouncementIds = Array.isArray(source.readAnnouncementIds) ? source.readAnnouncementIds.filter((id) => typeof id === "string") : [];
   source.dismissedAnnouncementIds = Array.isArray(source.dismissedAnnouncementIds) ? source.dismissedAnnouncementIds.filter((id) => typeof id === "string") : [];
+  const savedSummaryPreferences = source.businessSummaryPreferences && typeof source.businessSummaryPreferences === "object" ? source.businessSummaryPreferences : {};
+  source.businessSummaryPreferences = { enabled: savedSummaryPreferences.enabled !== false, daily: savedSummaryPreferences.daily !== false, weekly: savedSummaryPreferences.weekly !== false, monthly: savedSummaryPreferences.monthly !== false };
+  source.businessSummaryMessages = Array.isArray(source.businessSummaryMessages) ? source.businessSummaryMessages : [];
   source.dashboardDismissedAttention = Array.isArray(source.dashboardDismissedAttention)
     ? source.dashboardDismissedAttention.filter((entry) => entry && typeof entry === "object" && !Array.isArray(entry) && typeof entry.id === "string" && entry.id.trim())
     : [];
@@ -969,6 +974,15 @@ const sortRecords = (records, mode) => records.slice().sort((a, b) => {
   if (mode === "listingSkuAsc") return String(a.listingSku || "").localeCompare(String(b.listingSku || ""), undefined, { numeric: true, sensitivity: "base" }) || aName.localeCompare(bName);
   if (mode === "listingSkuDesc") return String(b.listingSku || "").localeCompare(String(a.listingSku || ""), undefined, { numeric: true, sensitivity: "base" }) || aName.localeCompare(bName);
   return bDate - aDate;
+});
+const sortBySkuDescending = (records, field) => records.slice().sort((a, b) => {
+  const aSku = String(a[field] || "").trim();
+  const bSku = String(b[field] || "").trim();
+  const aName = String(a.name || a.productName || "").trim();
+  const bName = String(b.name || b.productName || "").trim();
+  if (!aSku && bSku) return 1;
+  if (aSku && !bSku) return -1;
+  return bSku.localeCompare(aSku, undefined, { numeric: true, sensitivity: "base" }) || aName.localeCompare(bName, undefined, { numeric: true, sensitivity: "base" });
 });
 const currentRecipeCost = (product, components) => (product.recipe || []).reduce((sum, part) => {
   const component = components.find((item) => item.id === part.componentId);
@@ -2760,8 +2774,7 @@ export default function App() {
   const [financeAnchor, setFinanceAnchor] = useState(TODAY);
   const [dashboardPeriod, setDashboardPeriod] = useState("month");
   const [dashboardAnchor, setDashboardAnchor] = useState(TODAY);
-  const [auditType, setAuditType] = useState("Listing");
-  const [auditRecordId, setAuditRecordId] = useState("All");
+  const [auditFilter, setAuditFilter] = useState("All");
   const [expandedDashboardAttention, setExpandedDashboardAttention] = useState([]);
   const [expandedIdeaStatuses, setExpandedIdeaStatuses] = useState([]);
   const [showDismissedAttention, setShowDismissedAttention] = useState(false);
@@ -2779,7 +2792,7 @@ export default function App() {
   const [customThemeSections, setCustomThemeSections] = useState({ surfaces: true, typography: false, accents: false, borders: false });
   const [customPresetChoice, setCustomPresetChoice] = useState(DEFAULT_THEME_NAME);
   const [themePickerOpen, setThemePickerOpen] = useState(false);
-  const [settingsSections, setSettingsSections] = useState({ profile: true, appearance: true, marketplaces: true, fees: false, widgets: false, options: false, data: false, archive: false, announcements: false });
+  const [settingsSections, setSettingsSections] = useState({ profile: true, appearance: true, marketplaces: true, fees: false, widgets: false, options: false, data: false, archive: false, announcements: false, summaries: false });
   const [backupOpen, setBackupOpen] = useState(false);
   const [pendingRecordConfirmation, setPendingRecordConfirmation] = useState(null);
   const [recordActionNotice, setRecordActionNotice] = useState("");
@@ -2814,8 +2827,9 @@ export default function App() {
     setNextUpExpanded(false);
     setCalendarFiltersExpanded(false);
     setListingPlansExpanded(false);
+    setDiscountPlansExpanded(false);
     setShowDismissedAttention(false);
-    setSettingsSections({ profile: screen === "Settings", appearance: false, marketplaces: false, fees: false, widgets: false, options: false, data: false, archive: false, announcements: false });
+    setSettingsSections({ profile: screen === "Settings", appearance: false, marketplaces: false, fees: false, widgets: false, options: false, data: false, archive: false, announcements: false, summaries: false });
   }, [screen]);
   const navigateToScreen = (target) => {
     if (!target || target === screen) return;
@@ -2841,6 +2855,7 @@ export default function App() {
   const [listingsCalendarMonth, setListingsCalendarMonth] = useState(() => new Date(new Date().getFullYear(), new Date().getMonth(), 1));
   const [listingsCalendarSelectedDay, setListingsCalendarSelectedDay] = useState(TODAY);
   const [listingPlansExpanded, setListingPlansExpanded] = useState(false);
+  const [discountPlansExpanded, setDiscountPlansExpanded] = useState(false);
   const [selectedDay, setSelectedDay] = useState(TODAY);
   const [nextUpExpanded, setNextUpExpanded] = useState(false);
   const [selectedDateExpanded, setSelectedDateExpanded] = useState(true);
@@ -3119,6 +3134,174 @@ export default function App() {
     const updated = recipe(old);
     return updated && updated !== old ? updated : updated || old;
   });
+
+  const summaryDateKey = (value) => {
+    const text = String(value == null ? "" : value).trim();
+    if (!text) return "";
+    if (/^\d{4}-\d{2}-\d{2}T/.test(text)) return timestampDateKey(text) || text.slice(0, 10);
+    if (/^\d{4}-\d{2}-\d{2}$/.test(text)) return text;
+    return parseDateInput(text) || timestampDateKey(text) || "";
+  };
+  const buildBusinessSummaryMessage = (source, spec, generatedAt) => {
+    const inRange = (value) => {
+      const key = summaryDateKey(value);
+      return !!key && key >= spec.startDate && key <= spec.endDate;
+    };
+    const all = (key) => Array.isArray(source[key]) ? source[key] : [];
+    const todayKey = spec.referenceDate;
+    const planned = [];
+    const completed = [];
+    const orders = all("orders").filter((order) => inRange(order.date || order.createdAt));
+    const salesByProduct = new Map();
+    let unitsSold = 0;
+    orders.forEach((order) => completed.push(`${dateLabel(order.date || order.createdAt)} · Order ${order.orderSku || "sale"}: ${(order.items || []).map((item) => (item.productName || "Product") + " × " + (Number(item.quantity) || 0)).join(", ") || "No line items"} · ${order.refundedAt ? "Refunded" : order.status || "Recorded"} · ${money(totalOrder(order), source.currency)}`));
+    orders.forEach((order) => (order.items || []).forEach((item) => {
+      const quantity = Math.max(0, Number(item.quantity) || 0);
+      unitsSold += quantity;
+      const key = item.productId || item.productSku || item.productName || "unknown";
+      const row = salesByProduct.get(key) || { name: item.productName || "Unlinked product", sku: item.productSku || "", units: 0, gross: 0 };
+      row.units += quantity;
+      row.gross += quantity * Math.max(0, Number(item.unitPrice) || 0);
+      salesByProduct.set(key, row);
+    }));
+    all("tasks").forEach((task) => {
+      if (inRange(task.dueDate) && !task.done) planned.push(`${dateLabel(task.dueDate)} · Task due: ${task.title || "Untitled task"}${task.priority ? " · " + task.priority : ""}`);
+      const completedDate = task.completedAt || (task.done ? task.updatedAt || task.dueDate : "");
+      if (task.done && inRange(completedDate)) completed.push(`${dateLabel(completedDate)} · Completed task: ${task.title || "Untitled task"}`);
+    });
+    all("events").forEach((event) => {
+      if (inRange(event.date)) (event.done || event.completedAt ? completed : planned).push(`${dateLabel(event.date)} · ${event.done || event.completedAt ? "Completed event" : "Business event"}: ${event.title || event.name || "Untitled event"}${event.category ? " · " + event.category : ""}`);
+    });
+    all("workPlans").forEach((plan) => {
+      if (inRange(plan.date)) (plan.done ? completed : planned).push(`${dateLabel(plan.date)} · ${plan.done ? "Completed work" : "Planned work"}: ${plan.title || "Work block"}${plan.startTime ? " · " + plan.startTime + (plan.endTime ? "–" + plan.endTime : "") : ""}`);
+    });
+    all("listings").forEach((listing) => {
+      const addListingDate = (date, label) => {
+        if (!inRange(date)) return;
+        const line = `${dateLabel(date)} · ${date >= todayKey ? "Planned" : "Past"} ${label}: ${listing.productName || "Listing"}${listing.listingSku ? " · " + listing.listingSku : ""}`;
+        (date >= todayKey ? planned : completed).push(line);
+      };
+      addListingDate(listing.startDate, "listing date");
+      addListingDate(listing.relistDate, "relisting");
+      (listing.relistHistory || []).forEach((entry) => { if (inRange(entry.date)) completed.push(`${dateLabel(entry.date)} · Relisted: ${listing.productName || "Listing"}${listing.listingSku ? " · " + listing.listingSku : ""}${entry.newPrice != null ? " · " + money(entry.newPrice, source.currency) : ""}`); });
+      (listing.discountPlans || []).forEach((discount) => {
+        if (inRange(discount.startDate)) (discount.startDate >= todayKey ? planned : completed).push(`${dateLabel(discount.startDate)} · ${discount.startDate >= todayKey ? "Discount starts" : "Discount started"}: ${discount.percent}% off · ${listing.productName || "Listing"}`);
+        if (discount.endDate && inRange(discount.endDate)) (discount.endDate >= todayKey ? planned : completed).push(`${dateLabel(discount.endDate)} · ${discount.endDate >= todayKey ? "Discount ends" : "Discount ended"}: ${listing.productName || "Listing"}`);
+      });
+    });
+    all("orders").forEach((order) => (order.timeline || []).forEach((step) => {
+      if (inRange(step.date || step.completedAt)) completed.push(`${dateLabel(step.date || step.completedAt)} · Order ${order.orderSku || "sale"}: ${step.status || step.title || "Status updated"}`);
+    }));
+    all("productions").filter((batch) => inRange(batch.date || batch.createdAt)).forEach((batch) => completed.push(`${dateLabel(batch.date || batch.createdAt)} · Produced ${batch.quantity || 0} · ${batch.productName || "Product"}`));
+    all("incomes").filter((item) => inRange(item.date)).forEach((item) => completed.push(`${dateLabel(item.date)} · Income: ${item.description || item.category || "Other income"} · ${money(item.amount, source.currency)}`));
+    all("expenses").filter((item) => inRange(item.date)).forEach((item) => completed.push(`${dateLabel(item.date)} · Expense: ${item.description || item.category || "Business expense"} · ${money(item.amount, source.currency)}`));
+    all("reviews").filter((item) => inRange(item.date)).forEach((item) => completed.push(`${dateLabel(item.date)} · Review: ${item.stars || "?"}/5 · ${item.productName || "Product not linked"}${item.platform ? " · " + item.platform : ""}`));
+
+    all("purchases").filter((item) => inRange(item.date)).forEach((item) => completed.push(`${dateLabel(item.date)} · Component purchase: ${item.componentName || item.description || "Restock"} · ${money((Number(item.purchaseCost) || 0) + (Number(item.shippingCost) || 0), source.currency)}`));
+    all("componentTransactions").filter((item) => inRange(item.date)).forEach((item) => { const component = all("components").find((row) => row.id === item.componentId); completed.push(`${dateLabel(item.date)} · Component stock: ${component ? component.name : "Deleted component"} · ${item.kind || "Stock change"} ${Number(item.quantity) > 0 ? "+" : ""}${item.quantity}`); });
+    all("productTransactions").filter((item) => inRange(item.date)).forEach((item) => { const product = all("products").find((row) => row.id === item.productId); completed.push(`${dateLabel(item.date)} · Product stock: ${product ? product.name : "Deleted product"} · ${item.kind || "Stock change"} ${Number(item.quantity) > 0 ? "+" : ""}${item.quantity}`); });
+    all("timeSessions").concat(all("timerSessions")).filter((item) => inRange(item.date || item.startTime)).forEach((item) => completed.push(`${dateLabel(item.date || item.startTime)} · Work tracked: ${item.projectName || item.label || "Work session"} · ${formatDuration(item.durationMs)}`));
+    const reportsByScope = new Map();
+    all("listings").forEach((listing) => (listing.activityReports || []).forEach((report) => {
+      const key = listing.id + "|" + (report.platform || "Marketplace not saved");
+      const rows = reportsByScope.get(key) || [];
+      rows.push({ listing, report, reportDate: summaryDateKey(report.recordedAt || report.periodEnd || report.periodStart) });
+      reportsByScope.set(key, rows);
+    }));
+    const analyticsDeltas = [];
+    reportsByScope.forEach((rows) => {
+      rows.sort((a, b) => a.reportDate.localeCompare(b.reportDate));
+      const previous = {};
+      rows.forEach(({ listing, report, reportDate }) => {
+        if (inRange(reportDate)) {
+          const changes = [];
+          LISTING_ANALYTICS_METRICS.forEach(({ key, label }) => {
+            const raw = report.metrics && report.metrics[key];
+            if (raw == null || !Number.isFinite(Number(raw))) return;
+            const current = Math.max(0, Number(raw));
+            let increase = 0;
+            if (report.metricMode === "period") increase = current;
+            else if (previous[key] != null) increase = current >= previous[key] ? current - previous[key] : current;
+            if (increase > 0) { analyticsDeltas.push({ listing, key, increase }); changes.push(`${label} +${increase}`); }
+          });
+          completed.push(`${dateLabel(reportDate)} · Analytics recorded: ${listing.productName || "Listing"} · ${report.platform || "Marketplace"}${changes.length ? " · " + changes.join(" · ") : " · snapshot saved"}`);
+        }
+        LISTING_ANALYTICS_METRICS.forEach(({ key }) => {
+          const raw = report.metrics && report.metrics[key];
+          if (raw != null && Number.isFinite(Number(raw)) && report.metricMode !== "period") previous[key] = Math.max(0, Number(raw));
+        });
+      });
+    });
+    const topProducts = Array.from(salesByProduct.values()).sort((a, b) => b.units - a.units || b.gross - a.gross).slice(0, 5);
+    const hashtagStats = new Map();
+    all("listings").forEach((listing) => {
+      const product = all("products").find((item) => item.id === listing.productId);
+      const tags = extractHashtags([listing.description || "", product && product.description || ""].join(" "));
+      const views = analyticsDeltas.filter((entry) => entry.listing.id === listing.id && entry.key === "views").reduce((sum, entry) => sum + entry.increase, 0);
+      tags.forEach((tag) => {
+        const stat = hashtagStats.get(tag) || { tag, listings: 0, views: 0 };
+        stat.listings += 1;
+        stat.views += views;
+        hashtagStats.set(tag, stat);
+      });
+    });
+    const topHashtags = Array.from(hashtagStats.values()).sort((a, b) => b.views - a.views || b.listings - a.listings || a.tag.localeCompare(b.tag)).slice(0, 8);
+    const topViewedListings = Array.from(analyticsDeltas.filter((entry) => entry.key === "views").reduce((map, entry) => { const row = map.get(entry.listing.id) || { listing: entry.listing, views: 0 }; row.views += entry.increase; map.set(entry.listing.id, row); return map; }, new Map()).values()).sort((a, b) => b.views - a.views).slice(0, 5);
+    const totalViews = analyticsDeltas.filter((entry) => entry.key === "views").reduce((sum, entry) => sum + entry.increase, 0);
+    const grossSales = orders.reduce((sum, order) => sum + totalOrder(order), 0);
+    const lineSection = (title, rows, emptyText) => [title, ...(rows.length ? rows.slice(0, 14).map((line) => "• " + line) : ["• " + emptyText]), ...(rows.length > 14 ? ["• " + (rows.length - 14) + " more entries"] : [])];
+    const body = [
+      `${spec.heading} · ${spec.rangeLabel}`,
+      `Generated ${new Date(generatedAt).toLocaleString()} · ${source.businessName || "Business tracker"}`,
+      "",
+      "BUSINESS SNAPSHOT",
+      `Orders ${orders.length} · Units sold ${unitsSold} · Gross sales ${money(grossSales, source.currency)} · Recorded analytics snapshots ${Array.from(reportsByScope.values()).reduce((sum, rows) => sum + rows.filter((row) => inRange(row.reportDate)).length, 0)} · Observed view increase ${totalViews}`,
+      ...lineSection("PLANNED AND UPCOMING", planned, "No planned tasks, events, work blocks, listing dates, or discounts for this period."),
+      ...lineSection("COMPLETED AND RECORDED ACTIVITY", completed, "No completed or past activity recorded for this period."),
+      ...lineSection("TOP PRODUCTS BY SALES", topProducts.map((row) => `${row.name}${row.sku ? " · " + row.sku : ""} · ${row.units} units · ${money(row.gross, source.currency)}`), "No product sales recorded for this period."),
+      ...lineSection("TOP LISTINGS BY RECORDED VIEWS", topViewedListings.map((row) => `${row.listing.productName || "Listing"}${row.listing.listingSku ? " · " + row.listing.listingSku : ""} · +${row.views} views`), "No view increases recorded for this period."),
+      ...lineSection("TOP HASHTAGS BY RECORDED VIEWS", topHashtags.map((row) => `${row.tag} · ${row.listings} listing${row.listings === 1 ? "" : "s"} · ${row.views} observed view increase`), "No hashtags found in listing or linked product descriptions."),
+    ].join("\n");
+    return { id: spec.id, title: spec.heading, date: spec.rangeLabel, body, summaryType: spec.type, periodStart: spec.startDate, periodEnd: spec.endDate, generatedAt };
+  };
+  const maybeCreateBusinessSummaries = () => {
+    const now = new Date();
+    const nearMidnight = now.getHours() === 23 && now.getMinutes() === 59;
+    const candidateDates = [new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1)];
+    if (nearMidnight) candidateDates.push(new Date(now.getFullYear(), now.getMonth(), now.getDate()));
+    const specs = [];
+    candidateDates.forEach((date) => {
+      const dateKey = localDateKey(date);
+      specs.push({ type: "daily", id: "business-summary:daily:" + dateKey, heading: "Day at a Glance", startDate: dateKey, endDate: dateKey, referenceDate: dateKey, rangeLabel: dateLabel(dateKey) });
+      if (date.getDay() === 0) {
+        const start = new Date(date.getFullYear(), date.getMonth(), date.getDate() - date.getDay());
+        const end = new Date(start.getFullYear(), start.getMonth(), start.getDate() + 6);
+        const startDate = localDateKey(start); const endDate = localDateKey(end);
+        specs.push({ type: "weekly", id: "business-summary:weekly:" + startDate, heading: "This Week at a Glance", startDate, endDate, referenceDate: dateKey, rangeLabel: dateLabel(startDate) + " – " + dateLabel(endDate) });
+      }
+      if (date.getDate() === 1) {
+        const startDate = localDateKey(new Date(date.getFullYear(), date.getMonth(), 1));
+        const endDate = localDateKey(new Date(date.getFullYear(), date.getMonth() + 1, 0));
+        specs.push({ type: "monthly", id: "business-summary:monthly:" + startDate, heading: "This Month at a Glance", startDate, endDate, referenceDate: dateKey, rangeLabel: date.toLocaleDateString(undefined, { month: "long", year: "numeric" }) });
+      }
+    });
+    setData((old) => {
+      const preferences = old.businessSummaryPreferences || { enabled: true, daily: true, weekly: true, monthly: true };
+      if (preferences.enabled === false) return old;
+      const existing = new Set((old.businessSummaryMessages || []).map((message) => message.id));
+      const currentDateKey = localDateKey(now);
+      const hasBusinessData = Boolean(old.businessName || old.businessStartDate) || ["components", "products", "listings", "orders", "tasks", "events", "expenses", "incomes", "reviews", "productions"].some((key) => Array.isArray(old[key]) && old[key].length > 0);
+      const generatedAt = now.toISOString();
+      const additions = specs.filter((spec) => (spec.referenceDate === currentDateKey || hasBusinessData) && preferences[spec.type] !== false && !existing.has(spec.id)).map((spec) => buildBusinessSummaryMessage(old, spec, generatedAt));
+      return additions.length ? { ...old, businessSummaryMessages: (old.businessSummaryMessages || []).concat(additions) } : old;
+    });
+  };
+  useEffect(() => {
+    if (!ready || storageLoadError) return undefined;
+    maybeCreateBusinessSummaries();
+    const interval = setInterval(maybeCreateBusinessSummaries, 15000);
+    return () => clearInterval(interval);
+  }, [ready, storageLoadError]);
   const attentionDismissals = db.dashboardDismissedAttention || [];
   const currentAttentionItems = attentionInboxItems.filter((item) => !attentionDismissals.some((dismissed) => dismissed.id === item.id));
   const attentionScopeScreen = screen.startsWith("Fulfillment:") ? "Orders" : screen;
@@ -3293,7 +3476,8 @@ export default function App() {
   }, [recordActionNotice]);
   const readAnnouncementIds = Array.isArray(db.readAnnouncementIds) ? db.readAnnouncementIds : [];
   const dismissedAnnouncementIds = Array.isArray(db.dismissedAnnouncementIds) ? db.dismissedAnnouncementIds : [];
-  const visibleAnnouncements = ANNOUNCEMENTS.filter((message) => !dismissedAnnouncementIds.includes(message.id));
+  const inboxMessages = ANNOUNCEMENTS.concat(Array.isArray(db.businessSummaryMessages) ? db.businessSummaryMessages : []).sort((a, b) => sortableDate(b.generatedAt || b.date) - sortableDate(a.generatedAt || a.date));
+  const visibleAnnouncements = inboxMessages.filter((message) => !dismissedAnnouncementIds.includes(message.id));
   const unreadAnnouncementCount = visibleAnnouncements.filter((message) => !readAnnouncementIds.includes(message.id)).length;
   const markAnnouncementRead = (messageId) => setData((old) => ({
     ...old,
@@ -3306,13 +3490,13 @@ export default function App() {
   }));
   const dismissAllAnnouncements = () => setData((old) => ({
     ...old,
-    dismissedAnnouncementIds: Array.from(new Set((Array.isArray(old.dismissedAnnouncementIds) ? old.dismissedAnnouncementIds : []).concat(ANNOUNCEMENTS.map((message) => message.id)))),
-    readAnnouncementIds: Array.from(new Set((Array.isArray(old.readAnnouncementIds) ? old.readAnnouncementIds : []).concat(ANNOUNCEMENTS.map((message) => message.id)))),
+    dismissedAnnouncementIds: Array.from(new Set((Array.isArray(old.dismissedAnnouncementIds) ? old.dismissedAnnouncementIds : []).concat(inboxMessages.map((message) => message.id)))),
+    readAnnouncementIds: Array.from(new Set((Array.isArray(old.readAnnouncementIds) ? old.readAnnouncementIds : []).concat(inboxMessages.map((message) => message.id)))),
   }));
   const restoreAllAnnouncements = () => setData((old) => ({
     ...old,
     dismissedAnnouncementIds: [],
-    readAnnouncementIds: (Array.isArray(old.readAnnouncementIds) ? old.readAnnouncementIds : []).filter((id) => !ANNOUNCEMENTS.some((message) => message.id === id)),
+    readAnnouncementIds: (Array.isArray(old.readAnnouncementIds) ? old.readAnnouncementIds : []).filter((id) => !inboxMessages.some((message) => message.id === id)),
   }));
   const saveSortMode = (key, value) => setData((old) => ({ ...old, sortModes: { ...(old.sortModes || {}), [key]: value } }));
   const saveRecord = (type, values, record) => {
@@ -4771,7 +4955,7 @@ export default function App() {
       setBackupText("");
       setCustomColorPicker("");
       setThemePickerOpen(false);
-      setSettingsSections({ profile: true, appearance: true, marketplaces: true, fees: false, widgets: false, options: false, data: false, archive: false, announcements: false });
+      setSettingsSections({ profile: true, appearance: true, marketplaces: true, fees: false, widgets: false, options: false, data: false, archive: false, announcements: false, summaries: false });
       setBackupOpen(false);
       setClearDataOpen(false);
       setClearConfirmText("");
@@ -5037,14 +5221,14 @@ export default function App() {
       parts: (product.recipe || []).filter((part) => part.componentId === component.id || (!part.componentId && String(part.sku || "").trim().toLowerCase() === String(component.sku || "").trim().toLowerCase())),
     })).filter((entry) => entry.parts.length);
     const filters = attributeFilters.components || {};
-    const list = sortRecords(records.filter((item) =>
+    const list = sortBySkuDescending(records.filter((item) =>
       (componentCategoryFilter === "All" || (item.category || "Other") === componentCategoryFilter) &&
       matchesAttributeFilter(item, "colors", filters.colors || "All") &&
       matchesAttributeFilter(item, "materials", filters.materials || "All") &&
       matchesAttributeFilter(item, "sizes", filters.sizes || "All") &&
       matchesAttributeFilter(item, "gender", filters.gender || "All") &&
       (!search || [item.name, item.sku, item.category, item.supplier, item.colors, item.materials, item.sizes, item.gender, item.notes].join(" ").toLowerCase().includes(search.toLowerCase()))
-    ), db.sortModes.components || "skuDesc");
+    ), "sku");
     const pagedComponents = pageRows("components", list);
     const history = (db.componentTransactions || []).slice().sort((a, b) => String(b.date || b.createdAt || "").localeCompare(String(a.date || a.createdAt || "")));
     const activeComponents = db.components.filter(active);
@@ -5062,7 +5246,6 @@ export default function App() {
           <ChoiceChips label="Audience" options={["All", ...attributeFilterOptions(db.components, "genders", "gender")]} value={filters.gender || "All"} onChange={(value) => setAttributeFilter("components", "gender", value)} />
         </> : null}
         <View style={styles.actionRow}><Action label={showArchivedComponents ? "Show active components" : "Show archived components (" + (db.components.length - activeComponents.length) + ")"} quiet onPress={() => setShowArchivedComponents(!showArchivedComponents)} /></View>
-        <SortControl value={db.sortModes.components || "skuDesc"} options={CATALOG_SORT_OPTIONS} onChange={(value) => saveSortMode("components", value)} />
         {pagedComponents.length ? pagedComponents.map((item) => {
           const low = Number(item.quantity) <= Number(item.lowStock);
           const expanded = expandedComponentIds.includes(item.id);
@@ -5097,14 +5280,14 @@ export default function App() {
     const outOfStockProducts = activeProducts.filter((item) => Math.max(0, Number(item.inventory) || 0) === 0);
     const records = showArchivedProducts ? db.products.filter((item) => !active(item)) : activeProducts;
     const filters = attributeFilters.products || {};
-    const list = sortRecords(records.filter((item) =>
+    const list = sortBySkuDescending(records.filter((item) =>
       (productCategoryFilter === "All" || (item.category || "Other") === productCategoryFilter) &&
       matchesAttributeFilter(item, "colors", filters.colors || "All") &&
       matchesAttributeFilter(item, "materials", filters.materials || "All") &&
       matchesAttributeFilter(item, "sizes", filters.sizes || "All") &&
       matchesAttributeFilter(item, "gender", filters.gender || "All") &&
       (!search || [item.name, item.sku, item.category, item.colors, item.description, item.materials, item.sizes, item.gender, item.condition, item.notes].join(" ").toLowerCase().includes(search.toLowerCase()))
-    ), db.sortModes.products || "skuDesc");
+    ), "sku");
     const pagedProducts = pageRows("products", list);
     const inventoryValue = activeProducts.reduce((sum, item) => sum + (Number(item.inventory) || 0) * (Number(item.price) || 0), 0);
     return (
@@ -5120,7 +5303,6 @@ export default function App() {
           <ChoiceChips label="Audience" options={["All", ...attributeFilterOptions(db.products, "genders", "gender")]} value={filters.gender || "All"} onChange={(value) => setAttributeFilter("products", "gender", value)} />
         </> : null}
         <View style={styles.actionRow}><Action label={showArchivedProducts ? "Show active products" : "Show archived products (" + (db.products.length - activeProducts.length) + ")"} quiet onPress={() => setShowArchivedProducts(!showArchivedProducts)} /></View>
-        <SortControl value={db.sortModes.products || "skuDesc"} options={CATALOG_SORT_OPTIONS} onChange={(value) => saveSortMode("products", value)} />
         {pagedProducts.length ? pagedProducts.map((item) => {
           const recipes = item.recipe || [];
           const productListings = db.listings.filter((listing) => listing.productId === item.id);
@@ -5205,7 +5387,7 @@ export default function App() {
       const product = db.products.find((row) => row.id === item.productId);
       return matchesAttributeFilter({ [key]: item[key] || (product && product[key]) || "" }, key, selected);
     };
-    const list = sortRecords(
+    const list = sortBySkuDescending(
       source.filter((item) =>
         (listingStatusFilter === "All" || item.status === listingStatusFilter) &&
         (listingChannelFilter === "All" || (item.marketplaces || (item.marketplace ? String(item.marketplace).split(",").map((channel) => channel.trim()) : [])).includes(listingChannelFilter)) &&
@@ -5215,18 +5397,17 @@ export default function App() {
         matchesListingAttribute(item, "gender", filters.gender || "All") &&
         (!search || [item.productName, item.productSku, item.listingSku, ...(item.marketplaces || (item.marketplace ? [item.marketplace] : [])), item.status, item.startDate, item.colors, item.materials, item.condition, item.notes, ...(item.discountPlans || []).flatMap((plan) => [plan.percent, plan.startDate, plan.endDate, plan.notes])].join(" ").toLowerCase().includes(search.toLowerCase()))
       ),
-      db.sortModes.listings || "productSkuDesc"
+      "listingSku"
     );
     const pagedListings = pageRows("listings", list);
-    const plans = activeListings.flatMap((listing) => [
-      ...(listing.discountPlans || []).flatMap((discountPlan) => [
-        { listing, discountPlan, date: discountPlan.startDate, kind: `${discountPlan.percent}% discount starts` },
-        discountPlan.endDate ? { listing, discountPlan, date: discountPlan.endDate, kind: `${discountPlan.percent}% discount ends` } : null,
-      ]),
-      listing.startDate && listing.startDate > TODAY ? { listing, date: listing.startDate, kind: "Listing goes live", listingStart: true } : null,
-      listing.relistDate ? { listing, date: listing.relistDate, kind: "Relist listing" } : null,
-    ]).filter((plan) => plan && plan.date >= TODAY).sort((a, b) => a.date.localeCompare(b.date));
-    const scheduledDiscounts = activeListings.reduce((sum, item) => sum + (item.discountPlans || []).filter((plan) => plan.startDate && plan.startDate > TODAY).length, 0);
+    const listingDatePlans = activeListings.flatMap((listing) => [
+      listing.startDate && listing.startDate >= TODAY ? { listing, date: listing.startDate, kind: "Listing goes live", listingStart: true } : null,
+      listing.relistDate && listing.relistDate >= TODAY ? { listing, date: listing.relistDate, kind: "Relist listing" } : null,
+    ]).filter(Boolean).sort((a, b) => a.date.localeCompare(b.date));
+    const discountCalendarPlans = activeListings.flatMap((listing) => (listing.discountPlans || []).flatMap((discountPlan) => [
+      discountPlan.startDate && discountPlan.startDate >= TODAY ? { listing, discountPlan, date: discountPlan.startDate, kind: `${discountPlan.percent}% discount starts` } : null,
+      discountPlan.endDate && discountPlan.endDate >= TODAY ? { listing, discountPlan, date: discountPlan.endDate, kind: `${discountPlan.percent}% discount ends` } : null,
+    ])).filter(Boolean).sort((a, b) => a.date.localeCompare(b.date));    const scheduledDiscounts = activeListings.reduce((sum, item) => sum + (item.discountPlans || []).filter((plan) => plan.startDate && plan.startDate > TODAY).length, 0);
     const relistsDue = activeListings.filter((item) => item.relistDate && item.relistDate >= TODAY).length;
     const listingsNeedingStockReview = activeListings.filter((item) => item.needsArchive || listingHasNoProductStock(item));
     const needsArchive = listingsNeedingStockReview.length;
@@ -5373,11 +5554,15 @@ export default function App() {
            <ChoiceChips label="Size" options={["All", ...attributeFilterOptions([...db.listings, ...db.products], "sizes", "sizes")]} value={filters.sizes || "All"} onChange={(value) => setAttributeFilter("listings", "sizes", value)} />
            <ChoiceChips label="Audience" options={["All", ...attributeFilterOptions([...db.listings, ...db.products], "genders", "gender")]} value={filters.gender || "All"} onChange={(value) => setAttributeFilter("listings", "gender", value)} />
          </> : null}
-         <SortControl value={db.sortModes.listings || "productSkuDesc"} options={LISTING_SORT_OPTIONS} onChange={(value) => saveSortMode("listings", value)} />
-                <SettingsAccordion title="Promotion &amp; relisting calendar" subtitle={plans.length + " upcoming"} expanded={listingPlansExpanded} onPress={() => setListingPlansExpanded((expanded) => !expanded)}>
-          {plans.length ? plans.map((plan, index) => <Card key={plan.listing.id + plan.kind + (plan.discountPlan ? plan.discountPlan.id : index)} style={styles.historyCard}>
-            <View style={styles.cardTop}><View style={styles.flex}><Text style={styles.recordTitle}>{plan.kind} · {plan.listing.productName}</Text><Text style={styles.recordMeta}>{dateLabel(plan.date)} · {(plan.listing.marketplaces || []).join(", ") || plan.listing.marketplace}</Text></View></View><View style={styles.actionRow}><Action label={plan.discountPlan ? "Edit discount" : plan.listingStart ? "Edit listing date" : "Edit relisting"} quiet onPress={() => plan.discountPlan ? openDiscountEditor(plan.listing, plan.discountPlan) : editListing(plan.listing)} /><Action label={plan.discountPlan ? "Delete discount" : plan.listingStart ? "Clear listing date" : "Delete relisting"} quiet onPress={() => plan.discountPlan ? deleteDiscountPlan(plan.listing, plan.discountPlan) : plan.listingStart ? beginEdit("listing", { ...plan.listing, startDate: "", price: String(plan.listing.price), marketplaces: plan.listing.marketplaces || [] }) : clearRelistDate(plan.listing)} /></View>
-          </Card>) : <Text style={styles.bodyText}>No upcoming promotions, listing dates, or relists. Add a listing date or promotion plan to see it here.</Text>}
+                <SettingsAccordion title="Listing/Relisting Calendar" subtitle={listingDatePlans.length + " upcoming date" + (listingDatePlans.length === 1 ? "" : "s")} expanded={listingPlansExpanded} onPress={() => setListingPlansExpanded((expanded) => !expanded)}>
+          {listingDatePlans.length ? listingDatePlans.map((plan) => <Card key={plan.listing.id + plan.kind} style={styles.historyCard}>
+            <View style={styles.cardTop}><View style={styles.flex}><Text style={styles.recordTitle}>{plan.kind} · {plan.listing.productName}</Text><Text style={styles.recordMeta}>{dateLabel(plan.date)} · {(plan.listing.marketplaces || []).join(", ") || plan.listing.marketplace}</Text></View></View><View style={styles.actionRow}><Action label={plan.listingStart ? "Edit listing date" : "Edit relisting"} quiet onPress={() => editListing(plan.listing)} /><Action label={plan.listingStart ? "Clear listing date" : "Delete relisting"} quiet onPress={() => plan.listingStart ? beginEdit("listing", { ...plan.listing, startDate: "", price: String(plan.listing.price), marketplaces: plan.listing.marketplaces || [] }) : clearRelistDate(plan.listing)} /></View>
+          </Card>) : <Text style={styles.bodyText}>No upcoming listing or relisting dates. Add dates to listings to see them here.</Text>}
+        </SettingsAccordion>
+        <SettingsAccordion title="Discount Calendar" subtitle={discountCalendarPlans.length + " upcoming date" + (discountCalendarPlans.length === 1 ? "" : "s")} expanded={discountPlansExpanded} onPress={() => setDiscountPlansExpanded((expanded) => !expanded)}>
+          {discountCalendarPlans.length ? discountCalendarPlans.map((plan) => <Card key={plan.listing.id + plan.discountPlan.id + plan.kind} style={styles.historyCard}>
+            <View style={styles.cardTop}><View style={styles.flex}><Text style={styles.recordTitle}>{plan.kind} · {plan.listing.productName}</Text><Text style={styles.recordMeta}>{dateLabel(plan.date)} · {(plan.listing.marketplaces || []).join(", ") || plan.listing.marketplace}</Text></View></View><View style={styles.actionRow}><Action label="Edit discount" quiet onPress={() => openDiscountEditor(plan.listing, plan.discountPlan)} /><Action label="Delete discount" quiet onPress={() => deleteDiscountPlan(plan.listing, plan.discountPlan)} /></View>
+          </Card>) : <Text style={styles.bodyText}>No upcoming discount start or end dates. Add a discount plan to see it here.</Text>}
         </SettingsAccordion>
         <View style={styles.sectionHeadingRow}><Text style={styles.sectionTitle}>{showArchivedListings ? "Archived listings" : "Your marketplace listings"}</Text></View>
         {pagedListings.length ? pagedListings.map((item) => {
@@ -6692,83 +6877,75 @@ export default function App() {
   };
 
   const renderAudit = () => {
-    const sourceByType = { Listing: db.listings || [], Product: db.products || [], Component: db.components || [] };
-    const record = (recordType, id) => sourceByType[recordType].find((item) => item.id === id);
-    const searchText = search.trim().toLowerCase();
-    const records = (sourceByType[auditType] || []).filter((item) => !searchText || [item.name, item.productName, item.productSku, item.listingSku, item.sku, item.description, item.status, item.category, item.marketplace, item.materials, item.colors].join(" ").toLowerCase().includes(searchText));
-    const pluralName = auditType === "Component" ? "components" : auditType === "Product" ? "products" : "listings";
-    const auditOptions = [{ label: "All " + pluralName + " · " + records.length, value: "All" }, ...records.map((item) => ({ label: [item.listingSku || item.sku, item.productName || item.name, item.status || item.category].filter(Boolean).join(" · "), value: item.id }))];
-    const selectedRecord = auditRecordId === "All" ? null : records.find((item) => item.id === auditRecordId) || null;
-    const relatedOrdersForListing = (listing) => (db.orders || []).concat(db.deletedOrders || []).filter((order) => order.id === listing.soldOutOrderId || (order.items || []).some((item) => item.listingId === listing.id || (!item.listingId && item.productId === listing.productId && order.listingId === listing.id)));
-    const recipeDetails = (product) => (product && product.recipe || []).map((part) => {
-      const component = (db.components || []).find((item) => item.id === part.componentId) || null;
-      const unitCost = Number(component ? component.cost : part.unitCost) || 0;
-      return { ...part, component: component ? { id: component.id, sku: component.sku, name: component.name, unit: component.unit, costPerUnit: component.cost, onHand: component.quantity } : null, estimatedLineCost: (Number(part.quantity) || 0) * unitCost };
-    });
-    const dossierFor = (recordType, item) => {
-      if (recordType === "Listing") {
-        const product = (db.products || []).find((candidate) => candidate.id === item.productId) || null;
-        const currentUnitCost = product ? currentRecipeCost(product, db.components || []) : null;
-        return {
-          recordType: "Listing",
-          listing: item,
-          linkedProduct: product ? { record: product, recipeWithComponents: recipeDetails(product), estimatedCurrentRecipeCostPerUnit: currentUnitCost, readyToSellUnits: productAvailableUnits(product, db.listings || []), currentStockRetailValue: (Number(product.inventory) || 0) * (Number(product.price) || 0), currentStockMaterialValue: (Number(product.inventory) || 0) * (currentUnitCost || 0) } : null,
-          listingEconomics: { askingPrice: Number(item.price) || 0, estimatedCurrentMaterialCostPerUnit: currentUnitCost, estimatedGrossMarginPerUnit: currentUnitCost == null ? null : (Number(item.price) || 0) - currentUnitCost, unitsSoldAllTime: soldQuantityForListing(item, db.orders || []) },
-          channelFeeRules: listingAnalyticsChannels(item).map((channel) => ({ channel, ...((db.marketplaceFeeRules || {})[channel] || {}) })),
-          analyticsHistory: (item.activityReports || []).slice().sort((a, b) => String(a.recordedAt || a.periodEnd || a.periodStart || "").localeCompare(String(b.recordedAt || b.periodEnd || b.periodStart || ""))),
-          listingDates: { createdAt: item.createdAt || null, firstListed: item.startDate || null, nextRelist: item.relistDate || null, relistHistory: item.relistHistory || [], discountPlans: item.discountPlans || [] },
-          relatedSales: relatedOrdersForListing(item),
-        };
+    const sources = [
+      { label: "Listing", records: db.listings || [] },
+      { label: "Product", records: db.products || [] },
+      { label: "Component", records: db.components || [] },
+      { label: "Order", records: (db.orders || []).concat(db.deletedOrders || []) },
+      { label: "Task", records: db.tasks || [] },
+      { label: "Event", records: db.events || [] },
+      { label: "Expense", records: db.expenses || [] },
+      { label: "Income", records: db.incomes || [] },
+      { label: "Review", records: db.reviews || [] },
+      { label: "Idea", records: db.ideas || [] },
+      { label: "Note", records: db.notes || [] },
+      { label: "Supplier", records: db.suppliers || [] },
+      { label: "Production", records: db.productions || [] },
+      { label: "Purchase", records: db.purchases || [] },
+      { label: "Work plan", records: db.workPlans || [] },
+    ];
+    const sourceEvents = sources.flatMap(({ label, records }) => records.flatMap((record) => (record.auditLog || []).map((entry) => ({
+      id: [label, record.id, entry.id || entry.date || entry.action].join(":"),
+      recordType: label,
+      record,
+      entry,
+      recordName: record.name || record.productName || record.title || record.orderSku || record.description || record.customer || "Untitled record",
+      sku: record.listingSku || record.productSku || record.sku || record.orderSku || "",
+    }))));
+    const query = search.trim().toLowerCase();
+    const filteredEvents = sourceEvents.filter((event) => {
+      const mainTypes = ["Listing", "Product", "Component", "Order"];
+      const matchesType = auditFilter === "All" || auditFilter === event.recordType || (auditFilter === "Other" && !mainTypes.includes(event.recordType));
+      const searchable = [event.recordType, event.recordName, event.sku, event.entry.action, event.entry.note, ...(Array.isArray(event.entry.changes) ? event.entry.changes : []).flatMap((change) => [change.field, change.from, change.to])].map((value) => typeof value === "string" ? value : "").join(" ").toLowerCase();
+      return matchesType && (!query || searchable.includes(query));
+    }).sort((a, b) => sortableDate(b.entry.date || b.record.updatedAt || b.record.createdAt) - sortableDate(a.entry.date || a.record.updatedAt || a.record.createdAt));
+    const fieldLabel = (field) => String(field || "Details").replace(/([a-z0-9])([A-Z])/g, "$1 $2").replace(/[_-]+/g, " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
+    const valueLabel = (value) => {
+      if (value == null || value === "") return "Not set";
+      if (typeof value === "boolean") return value ? "Yes" : "No";
+      if (Array.isArray(value)) {
+        if (!value.length) return "None";
+        return value.map((item) => {
+          if (item == null || typeof item !== "object") return String(item);
+          const details = [item.name, item.productName, item.componentName, item.percent != null ? item.percent + "%" : "", item.startDate && dateLabel(item.startDate), item.endDate && dateLabel(item.endDate), item.quantity != null ? "Qty " + item.quantity : ""].filter(Boolean);
+          return details.length ? details.join(" · ") : "Updated details";
+        }).join("; ");
       }
-      if (recordType === "Product") {
-        const linkedListings = (db.listings || []).filter((listing) => listing.productId === item.id);
-        const linkedOrders = (db.orders || []).concat(db.deletedOrders || []).filter((order) => (order.items || []).some((line) => line.productId === item.id));
-        return { recordType: "Product", product: item, recipeWithComponents: recipeDetails(item), estimatedCurrentRecipeCostPerUnit: currentRecipeCost(item, db.components || []), relatedListings: linkedListings.map((listing) => dossierFor("Listing", listing)), relatedSales: linkedOrders };
+      if (typeof value === "object") {
+        const parts = Object.entries(value).filter(([key, item]) => !["id", "createdAt", "updatedAt"].includes(key) && item != null && item !== "").slice(0, 6).map(([key, item]) => fieldLabel(key) + ": " + (typeof item === "object" ? Array.isArray(item) ? item.length + " items" : "details updated" : String(item)));
+        return parts.join(" · ") || "Details updated";
       }
-      const uses = (db.products || []).flatMap((product) => (product.recipe || []).filter((part) => part.componentId === item.id).map((part) => ({ productId: product.id, productName: product.name, productSku: product.sku, quantityPerProduct: part.quantity, unit: part.unit || item.unit, estimatedCostPerFinishedProduct: (Number(part.quantity) || 0) * (Number(item.cost) || 0) })));
-      return { recordType: "Component", component: item, inventoryValueAtCurrentCost: (Number(item.quantity) || 0) * (Number(item.cost) || 0), usedInProducts: uses, inventoryHistory: (db.componentTransactions || []).filter((entry) => entry.componentId === item.id), purchases: (db.purchases || []).filter((entry) => entry.componentId === item.id) };
+      return String(value);
     };
-    const selectedDossier = selectedRecord ? dossierFor(auditType, selectedRecord) : null;
-    const allDossiers = records.map((item) => dossierFor(auditType, item));
-    const serialize = (value) => JSON.stringify({ exportedAt: new Date().toISOString(), recordType: auditType, records: value }, null, 2);
-    const copyAuditData = async (value, label) => {
-      const payload = serialize(value);
-      try {
-        let copied = false;
-        if (Platform.OS === "web" && typeof navigator !== "undefined" && navigator.clipboard && navigator.clipboard.writeText) {
-          try { await navigator.clipboard.writeText(payload); copied = true; } catch (_clipboardError) { /* try the browser fallback below */ }
-        }
-        if (!copied && Platform.OS === "web" && typeof document !== "undefined" && document.body && typeof document.execCommand === "function") {
-          const textarea = document.createElement("textarea");
-          textarea.value = payload;
-          textarea.setAttribute("readonly", "");
-          textarea.style.position = "fixed";
-          textarea.style.left = "-9999px";
-          document.body.appendChild(textarea);
-          textarea.focus();
-          textarea.select();
-          copied = document.execCommand("copy");
-          document.body.removeChild(textarea);
-        }
-        if (copied) Alert.alert("Copied", label + " is ready to paste.");
-        else if (Platform.OS !== "web") await Share.share({ title: label, message: payload });
-        else Alert.alert("Could not copy", "Clipboard access was unavailable. Try again or select the record text and copy it manually.");
-      } catch (_error) { Alert.alert("Could not copy", "Clipboard access was unavailable. Try again or select the record text and copy it manually."); }
-    };    const titleForRecord = (item) => item.listingSku || item.sku || item.productName || item.name || "Saved record";
-    const summaryForRecord = (item) => auditType === "Listing"
-      ? [item.status || "Status not set", "Listed " + (item.startDate ? dateLabel(item.startDate) : "date not saved"), item.relistDate ? "Next relist " + dateLabel(item.relistDate) : "No relist planned", (item.activityReports || []).length + " analytics checks"].join(" · ")
-      : auditType === "Product" ? [(item.category || "Uncategorized"), (Number(item.inventory) || 0) + " finished on hand", money(item.price, db.currency) + " asking price", (item.recipe || []).length + " recipe components"].join(" · ")
-        : [item.category || "Component", (Number(item.quantity) || 0) + " " + (item.unit || "units") + " on hand", money(item.cost, db.currency) + " per unit", money((Number(item.quantity) || 0) * (Number(item.cost) || 0), db.currency) + " stock value"].join(" · ");
+    const actionLabel = (action) => ({ "Record created": "Created record", "Record updated": "Updated record", "Sale details edited": "Updated order details" }[action] || action || "Changed record");
+    const eventWhen = (event) => {
+      const raw = event.entry.date || event.record.updatedAt || event.record.createdAt;
+      const date = raw ? new Date(raw) : null;
+      if (!raw) return "Date not saved";
+      if (!/T/.test(String(raw)) || !date || !Number.isFinite(date.getTime())) return dateLabel(summaryDateKey(raw) || raw);
+      return dateLabel(localDateKey(date)) + " · " + date.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+    };
     return <>
-      <View style={styles.infoBanner}><Text style={styles.infoBannerTitle}>Explore complete business records</Text><Text style={styles.infoBannerText}>Choose a listing, product, or component to see its saved details and linked history. Select All to browse or copy every matching record. Listing dossiers include the linked product, recipe components, costs, dates, relists, analytics checks, and related sales.</Text></View>
-      <ChoiceChips label="Choose a record type" options={[{ label: "Listings", value: "Listing" }, { label: "Products", value: "Product" }, { label: "Components", value: "Component" }]} value={auditType} onChange={(value) => { setAuditType(value); setAuditRecordId("All"); }} />
-      <Field field={{ label: "Choose a record", options: auditOptions, searchable: true, searchPlaceholder: "Search " + pluralName, placeholder: "All " + pluralName }} value={auditOptions.some((option) => option.value === auditRecordId) ? auditRecordId : "All"} onChange={setAuditRecordId} />
-      <View style={styles.metricGrid}><Metric label={"Matching " + pluralName} value={String(records.length)} /><Metric label="Selection" value={selectedRecord ? titleForRecord(selectedRecord) : "All"} /><Metric label="Search" value={searchText ? "Filtered" : "All records"} /></View>
-      <View style={styles.actionRow}><Action label={selectedRecord ? "Copy selected details" : "Copy all matching " + pluralName} onPress={() => copyAuditData(selectedRecord ? [selectedDossier] : allDossiers, selectedRecord ? "Record details" : "All " + pluralName)} />{selectedRecord ? <Action label={"Copy all matching " + pluralName} quiet onPress={() => copyAuditData(allDossiers, "All " + pluralName)} /> : null}</View>
-      {selectedRecord ? <Card><View style={styles.cardTop}><View style={styles.flex}><Text style={styles.recordTitle}>{titleForRecord(selectedRecord)}</Text><Text style={styles.recordMeta}>{auditType} · {summaryForRecord(selectedRecord)}</Text></View></View><Text style={styles.fieldHint}>Complete saved record and linked details · JSON</Text><Text selectable style={styles.bodyText}>{JSON.stringify(selectedDossier, null, 2)}</Text></Card> : records.length ? records.map((item) => <Card key={item.id} style={styles.historyCard}><View style={styles.cardTop}><View style={styles.flex}><Text style={styles.recordTitle}>{titleForRecord(item)}</Text><Text style={styles.recordMeta}>{summaryForRecord(item)}</Text></View><Action label="View full details" quiet onPress={() => setAuditRecordId(item.id)} /></View></Card>) : <EmptyState title={"No " + pluralName + " found"} body="Add a record or clear the page search to explore your saved details." />}
+      <View style={styles.infoBanner}><Text style={styles.infoBannerTitle}>Business activity in plain language</Text><Text style={styles.infoBannerText}>Review saved changes in time order. Each entry names the affected record and shows the before-and-after values when the app recorded them.</Text></View>
+      <ChoiceChips label="Activity type" options={["All", { label: "Listings", value: "Listing" }, { label: "Products", value: "Product" }, { label: "Components", value: "Component" }, { label: "Orders", value: "Order" }, "Other"]} value={auditFilter} onChange={setAuditFilter} />
+      <View style={styles.metricGrid}><Metric label="Activity entries" value={String(filteredEvents.length)} /><Metric label="Listings" value={String(sourceEvents.filter((event) => event.recordType === "Listing").length)} /><Metric label="Products & components" value={String(sourceEvents.filter((event) => event.recordType === "Product" || event.recordType === "Component").length)} /><Metric label="Orders" value={String(sourceEvents.filter((event) => event.recordType === "Order").length)} /></View>
+      {filteredEvents.length ? filteredEvents.map((event) => <Card key={event.id} style={styles.historyCard}>
+        <View style={styles.cardTop}><View style={styles.flex}><Text style={styles.recordTitle}>{actionLabel(event.entry.action)}</Text><Text style={styles.recordMeta}>{event.recordType} · {event.recordName}{event.sku ? " · " + event.sku : ""}</Text><Text style={styles.recordMeta}>{eventWhen(event)}</Text></View></View>
+        {(Array.isArray(event.entry.changes) ? event.entry.changes : []).length ? <View style={styles.discountPlanList}>{(Array.isArray(event.entry.changes) ? event.entry.changes : []).map((change, index) => <View key={change.field + index} style={styles.detailLine}><Text style={styles.detailLabel}>{fieldLabel(change.field)}</Text><Text style={styles.detailText}>{valueLabel(change.from)} → {valueLabel(change.to)}</Text></View>)}</View> : <Text style={styles.bodyText}>{event.entry.action === "Record created" ? "A new record was added." : "No before-and-after values were saved for this activity."}</Text>}
+        {event.entry.note ? <Text style={styles.fieldHint}>{event.entry.note}</Text> : null}
+      </Card>) : <EmptyState title={query || auditFilter !== "All" ? "No matching activity" : "No audit activity recorded yet"} body={query || auditFilter !== "All" ? "Try another search or activity type." : "Changes to listings, products, components, orders, and other saved records will appear here as readable activity."} />}
     </>;
-  };
-  const renderSuppliers = () => {
+  };  const renderSuppliers = () => {
     const suppliers = sortRecords(db.suppliers.filter(active).filter((item) => !search || [item.name, item.contact, item.website, item.category, item.notes].join(" ").toLowerCase().includes(search.toLowerCase())), db.sortModes.suppliers);
     const pagedSuppliers = pageRows("suppliers", suppliers);
     const linkedComponents = db.components.filter((item) => active(item) && String(item.supplier || "").trim());
@@ -6851,6 +7028,8 @@ export default function App() {
       ...db.notes.filter((x) => x.archived).map((x) => ({ ...x, group: "notes", label: "Note" })),
       ...db.suppliers.filter((x) => x.archived).map((x) => ({ ...x, group: "suppliers", label: "Supplier" })),
     ];
+    const summaryPreferences = db.businessSummaryPreferences || { enabled: true, daily: true, weekly: true, monthly: true };
+    const updateSummaryPreference = (key, value) => setData((old) => ({ ...old, businessSummaryPreferences: { enabled: true, daily: true, weekly: true, monthly: true, ...(old.businessSummaryPreferences || {}), [key]: value } }));
     const toggleSection = (key) => setSettingsSections((old) => ({ ...old, [key]: !old[key] }));
     const toggleCustomThemeSection = (key) => setCustomThemeSections((old) => ({ ...old, [key]: !old[key] }));
     return <>
@@ -6863,6 +7042,16 @@ export default function App() {
         { label: "＋ Add business record", onPress: () => setAddChooserOpen(true) },
         { label: "Export backup", onPress: exportBackup, quiet: true },
       ]} />
+      <SettingsAccordion title="Business summary messages" subtitle={summaryPreferences.enabled ? "Generated at 11:59 PM local time · " + ["daily", "weekly", "monthly"].filter((key) => summaryPreferences[key] !== false).length + " schedule(s) enabled" : "Turned off"} expanded={settingsSections.summaries} onPress={() => toggleSection("summaries")}>
+        <Text style={styles.bodyText}>Add date-specific business summaries to the existing What’s new inbox. Summaries include plans, completed activity, orders, listing and discount dates, saved analytics, top products, and listing hashtags.</Text>
+        <ChoiceChips label="Business summaries" options={[{ label: "On", value: true }, { label: "Off", value: false }]} value={summaryPreferences.enabled !== false} onChange={(value) => updateSummaryPreference("enabled", value)} />
+        {summaryPreferences.enabled !== false ? <>
+          <ChoiceChips label="Day at a Glance · every day" options={[{ label: "On", value: true }, { label: "Off", value: false }]} value={summaryPreferences.daily !== false} onChange={(value) => updateSummaryPreference("daily", value)} />
+          <ChoiceChips label="This Week at a Glance · Sundays" options={[{ label: "On", value: true }, { label: "Off", value: false }]} value={summaryPreferences.weekly !== false} onChange={(value) => updateSummaryPreference("weekly", value)} />
+          <ChoiceChips label="This Month at a Glance · first day" options={[{ label: "On", value: true }, { label: "Off", value: false }]} value={summaryPreferences.monthly !== false} onChange={(value) => updateSummaryPreference("monthly", value)} />
+        </> : <Text style={styles.fieldHint}>All business summaries are paused. Existing inbox messages remain saved.</Text>}
+        <Text style={styles.fieldHint}>The tracker creates messages at 11:59 PM while it is open. If it is closed then, the prior day summary is created the next time you open the tracker.</Text>
+      </SettingsAccordion>
       <SettingsAccordion title="What’s new messages" subtitle={ANNOUNCEMENTS.length + " published message" + (ANNOUNCEMENTS.length === 1 ? "" : "s")} expanded={settingsSections.announcements} onPress={() => toggleSection("announcements")}>
         <Text style={styles.bodyText}>These messages appear in the mailbox for every visitor after you publish the website. GitHub Pages is a static website, so messages for everyone are added to the ANNOUNCEMENTS list near the top of App.js, then published to GitHub. Each visitor’s read count is saved in their own browser.</Text>
         {ANNOUNCEMENTS.map((message) => <View key={message.id} style={styles.announcementSettingsRow}><Text style={styles.fieldLabel}>{message.title}</Text><Text style={styles.recordMeta}>{message.date}</Text><Text style={styles.bodyText}>{message.body}</Text></View>)}
@@ -7186,9 +7375,9 @@ export default function App() {
                   <Text style={styles.bodyText}>{message.body}</Text>
                   <View style={styles.announcementMessageActions}>{isUnread ? <Pressable accessibilityRole="button" onPress={() => markAnnouncementRead(message.id)} style={styles.announcementReadAction}><Text style={styles.announcementMarkAllText}>Mark as read</Text></Pressable> : <Text style={styles.announcementReadLabel}>Read</Text>}<Pressable accessibilityRole="button" onPress={() => dismissAnnouncement(message.id)} style={styles.announcementReadAction}><Text style={styles.announcementMarkAllText}>Dismiss</Text></Pressable></View>
                 </View>;
-              }) : <Text style={styles.bodyText}>{ANNOUNCEMENTS.length ? "All messages are dismissed. Choose Restore all to bring them back." : "There are no announcements yet."}</Text>}
+              }) : <Text style={styles.bodyText}>{inboxMessages.length ? "All messages are dismissed. Choose Restore all to bring them back." : "There are no announcements or business summaries yet."}</Text>}
             </ScrollView>
-            <Text style={styles.announcementFootnote}>Updates are published with the website. Your read status is saved in this browser.</Text>
+            <Text style={styles.announcementFootnote}>Business summaries are added to this inbox at 11:59 PM local time when the tracker is open. Your messages and read status are saved on this device.</Text>
           </SafeAreaView>
         </View>
       </Modal>
