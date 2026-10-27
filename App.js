@@ -835,6 +835,20 @@ const listingAgeText = (listing) => {
   const elapsed = days + " day" + (days === 1 ? "" : "s") + " (" + weeks + " week" + (weeks === 1 ? "" : "s") + (extraDays ? ", " + extraDays + " day" + (extraDays === 1 ? "" : "s") : "") + ")";
   return "Listed " + dateLabel(listedOn) + " · " + elapsed;
 };
+const listingAgeDays = (listing) => {
+  const listedOn = parseDateInput(listing && listing.startDate);
+  if (!listedOn || listedOn > TODAY) return null;
+  const start = new Date(listedOn + "T12:00:00");
+  const end = new Date(TODAY + "T12:00:00");
+  return Math.max(0, Math.floor((end.getTime() - start.getTime()) / 86400000));
+};
+const listingAgeTone = (listing) => {
+  if (listing && (listing.archived || listing.status === "Sold")) return "gray";
+  const days = listingAgeDays(listing);
+  if (days == null) return "neutral";
+  return days >= 30 ? "red" : days >= 20 ? "amber" : "green";
+};
+const characterCount = (value) => Array.from(String(value == null ? "" : value)).length;
 const periodDateRange = (period, value) => {
   const selected = parseDateInput(value);
   if (!selected) return null;
@@ -903,9 +917,19 @@ const SORT_OPTIONS = [
   { label: "Price low to high", value: "priceAsc" },
   { label: "Price high to low", value: "priceDesc" },
 ];
+const CATALOG_SORT_OPTIONS = SORT_OPTIONS.concat([
+  { label: "SKU low to high", value: "skuAsc" },
+  { label: "SKU high to low", value: "skuDesc" },
+  { label: "Quantity low to high", value: "quantityAsc" },
+  { label: "Quantity high to low", value: "quantityDesc" },
+  { label: "Cost low to high", value: "costAsc" },
+  { label: "Cost high to low", value: "costDesc" },
+]);
 const LISTING_SORT_OPTIONS = SORT_OPTIONS.concat([
   { label: "Product SKU low to high", value: "productSkuAsc" },
   { label: "Product SKU high to low", value: "productSkuDesc" },
+  { label: "Listing SKU low to high", value: "listingSkuAsc" },
+  { label: "Listing SKU high to low", value: "listingSkuDesc" },
 ]);
 const sortableDate = (value) => {
   if (!value) return 0;
@@ -925,13 +949,25 @@ const sortRecords = (records, mode) => records.slice().sort((a, b) => {
   const bDate = sortableDate(b.date || b.createdAt || b.startDate || b.dueDate);
   const aPrice = Number(a.price != null ? a.price : a.amount != null ? a.amount : totalOrder(a)) || 0;
   const bPrice = Number(b.price != null ? b.price : b.amount != null ? b.amount : totalOrder(b)) || 0;
+  const aQuantity = Number(a.quantity != null ? a.quantity : a.inventory) || 0;
+  const bQuantity = Number(b.quantity != null ? b.quantity : b.inventory) || 0;
+  const aCost = Number(a.cost != null ? a.cost : a.price) || 0;
+  const bCost = Number(b.cost != null ? b.cost : b.price) || 0;
   if (mode === "oldest") return aDate - bDate;
   if (mode === "nameAsc") return aName.localeCompare(bName);
   if (mode === "nameDesc") return bName.localeCompare(aName);
   if (mode === "priceAsc") return aPrice - bPrice;
   if (mode === "priceDesc") return bPrice - aPrice;
+  if (mode === "quantityAsc") return aQuantity - bQuantity || aName.localeCompare(bName);
+  if (mode === "quantityDesc") return bQuantity - aQuantity || aName.localeCompare(bName);
+  if (mode === "costAsc") return aCost - bCost || aName.localeCompare(bName);
+  if (mode === "costDesc") return bCost - aCost || aName.localeCompare(bName);
+  if (mode === "skuAsc") return String(a.sku || a.productSku || a.listingSku || "").localeCompare(String(b.sku || b.productSku || b.listingSku || ""), undefined, { numeric: true, sensitivity: "base" }) || aName.localeCompare(bName);
+  if (mode === "skuDesc") return String(b.sku || b.productSku || b.listingSku || "").localeCompare(String(a.sku || a.productSku || a.listingSku || ""), undefined, { numeric: true, sensitivity: "base" }) || aName.localeCompare(bName);
   if (mode === "productSkuAsc") return String(a.productSku || a.sku || "").localeCompare(String(b.productSku || b.sku || ""), undefined, { numeric: true, sensitivity: "base" }) || aName.localeCompare(bName);
   if (mode === "productSkuDesc") return String(b.productSku || b.sku || "").localeCompare(String(a.productSku || a.sku || ""), undefined, { numeric: true, sensitivity: "base" }) || aName.localeCompare(bName);
+  if (mode === "listingSkuAsc") return String(a.listingSku || "").localeCompare(String(b.listingSku || ""), undefined, { numeric: true, sensitivity: "base" }) || aName.localeCompare(bName);
+  if (mode === "listingSkuDesc") return String(b.listingSku || "").localeCompare(String(a.listingSku || ""), undefined, { numeric: true, sensitivity: "base" }) || aName.localeCompare(bName);
   return bDate - aDate;
 });
 const currentRecipeCost = (product, components) => (product.recipe || []).reduce((sum, part) => {
@@ -1342,7 +1378,7 @@ function Field({ field, value, onChange, onManageOptions }) {
         </View>
       ) : field.date ? (
         <View>
-          {Platform.OS === "web" ? <View style={styles.dateInputRow}>
+          <View style={styles.dateInputRow}>
             <TextInput
               value={formatDateInput(value)}
               onChangeText={onChange}
@@ -1353,59 +1389,37 @@ function Field({ field, value, onChange, onManageOptions }) {
               selectTextOnFocus={field.selectTextOnFocus}
               accessibilityLabel={field.label + " typed date"}
             />
-            <View style={[styles.dateCalendarButton, { position: "relative", overflow: "hidden" }]}>
+            <Pressable style={styles.dateCalendarButton} onPress={openDatePicker} accessibilityRole="button" accessibilityLabel={"Choose " + field.label + " from calendar"}>
               <AppIcon name="calendar" size={18} color={COLORS.wine} />
-              <input
-                type="date"
-                aria-label={"Choose " + field.label + " from calendar"}
-                value={parseDateInput(value) || ""}
-                onChange={(event) => onChange(event.currentTarget.value)}
-                style={{ position: "absolute", top: 0, right: 0, bottom: 0, left: 0, width: "100%", height: "100%", opacity: 0.015, cursor: "pointer" }}
-              />
-            </View>
-          </View> : <>
-            <View style={styles.dateInputRow}>
-              <TextInput
-                value={formatDateInput(value)}
-                onChangeText={onChange}
-                placeholder={field.placeholder || CURRENT_DATE_FORMAT + " (or YYYY-MM-DD)"}
-                placeholderTextColor={COLORS.placeholder}
-                keyboardType="numbers-and-punctuation"
-                style={[styles.input, styles.dateTextInput]}
-                selectTextOnFocus={field.selectTextOnFocus}
-              />
-              <Pressable style={styles.dateCalendarButton} onPress={openDatePicker} accessibilityRole="button" accessibilityLabel={"Choose " + field.label + " from calendar"}>
-                <AppIcon name="calendar" size={18} color={COLORS.wine} />
-              </Pressable>
-            </View>
-            <Modal visible={datePickerOpen} transparent animationType="fade" onRequestClose={() => setDatePickerOpen(false)}>
-              <View style={styles.chooserBackdrop}>
-                <View style={styles.datePickerCard}>
-                  <View style={styles.monthHeader}>
-                    <Pressable style={styles.monthArrow} onPress={() => setDatePickerMonth(new Date(datePickerMonth.getFullYear(), datePickerMonth.getMonth() - 1, 1))}><Text style={styles.monthArrowText}>‹</Text></Pressable>
-                    <Text style={styles.monthTitle}>{datePickerMonth.toLocaleDateString(undefined, { month: "long", year: "numeric" })}</Text>
-                    <Pressable style={styles.monthArrow} onPress={() => setDatePickerMonth(new Date(datePickerMonth.getFullYear(), datePickerMonth.getMonth() + 1, 1))}><Text style={styles.monthArrowText}>›</Text></Pressable>
-                  </View>
-                  <View style={styles.calendarWeek}>{["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((day) => <Text key={day} style={styles.weekDay}>{day}</Text>)}</View>
-                  <View style={styles.datePickerGrid}>
-                    {datePickerDays.map((day) => {
-                      const key = localDateKey(day);
-                      const inMonth = day.getMonth() === datePickerMonth.getMonth();
-                      return <Pressable key={key} onPress={() => { onChange(key); setDatePickerOpen(false); }} style={[styles.calendarCell, !inMonth && styles.datePickerOutside, key === selectedDateKey && styles.calendarCellSelected]}>
-                        <Text style={[styles.calendarDay, !inMonth && styles.calendarDayOutside, key === localDateKey(new Date()) && styles.calendarDayToday, key === selectedDateKey && styles.calendarDayPicked]}>{day.getDate()}</Text>
-                      </Pressable>;
-                    })}
-                  </View>
-                  <View style={styles.actionRow}>
-                    <Action label="Clear date" quiet onPress={() => { onChange(""); setDatePickerOpen(false); }} />
-                    <Action label="Today" onPress={() => { onChange(localDateKey(new Date())); setDatePickerOpen(false); }} />
-                    <Action label="Close" quiet onPress={() => setDatePickerOpen(false)} />
-                  </View>
+            </Pressable>
+          </View>
+          <Modal visible={datePickerOpen} transparent animationType="fade" onRequestClose={() => setDatePickerOpen(false)}>
+            <View style={styles.chooserBackdrop}>
+              <View style={styles.datePickerCard}>
+                <View style={styles.monthHeader}>
+                  <Pressable style={styles.monthArrow} onPress={() => setDatePickerMonth(new Date(datePickerMonth.getFullYear(), datePickerMonth.getMonth() - 1, 1))}><Text style={styles.monthArrowText}>‹</Text></Pressable>
+                  <Text style={styles.monthTitle}>{datePickerMonth.toLocaleDateString(undefined, { month: "long", year: "numeric" })}</Text>
+                  <Pressable style={styles.monthArrow} onPress={() => setDatePickerMonth(new Date(datePickerMonth.getFullYear(), datePickerMonth.getMonth() + 1, 1))}><Text style={styles.monthArrowText}>›</Text></Pressable>
+                </View>
+                <View style={styles.calendarWeek}>{["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((day) => <Text key={day} style={styles.weekDay}>{day}</Text>)}</View>
+                <View style={styles.datePickerGrid}>
+                  {datePickerDays.map((day) => {
+                    const key = localDateKey(day);
+                    const inMonth = day.getMonth() === datePickerMonth.getMonth();
+                    return <Pressable key={key} onPress={() => { onChange(key); setDatePickerOpen(false); }} style={[styles.calendarCell, !inMonth && styles.datePickerOutside, key === selectedDateKey && styles.calendarCellSelected]}>
+                      <Text style={[styles.calendarDay, !inMonth && styles.calendarDayOutside, key === localDateKey(new Date()) && styles.calendarDayToday, key === selectedDateKey && styles.calendarDayPicked]}>{day.getDate()}</Text>
+                    </Pressable>;
+                  })}
+                </View>
+                <View style={styles.actionRow}>
+                  <Action label="Clear date" quiet onPress={() => { onChange(""); setDatePickerOpen(false); }} />
+                  <Action label="Today" onPress={() => { onChange(localDateKey(new Date())); setDatePickerOpen(false); }} />
+                  <Action label="Close" quiet onPress={() => setDatePickerOpen(false)} />
                 </View>
               </View>
-            </Modal>
-          </>}
-          <Text style={styles.fieldHint}>{Platform.OS === "web" ? "Type a date in the left field or select the calendar button. Your date format is set in Settings." : "Type a date or choose one from the calendar. Your date format is set in Settings."}</Text>
+            </View>
+          </Modal>
+          <Text style={styles.fieldHint}>Type a date or select the calendar button. Your date format is set in Settings.</Text>
         </View>
       ) : field.time ? (
         <TimeInput value={value} onChange={onChange} placeholder={field.placeholder} />
@@ -2165,6 +2179,10 @@ function RecordModal({ visible, type, record, db, prefill, onClose, onSave, onMa
               }
               return next;
             })} onManageOptions={onManageOptions} />
+            {type === "listing" && field.key === "listingNameOverride" ? <Text style={styles.fieldHint}>{characterCount(String(values.listingNameOverride || "").trim() || ((db.products.find((item) => item.id === values.productId) || {}).name || ""))} characters in the listing title currently used</Text> : null}
+            {type === "listing" && field.key === "description" ? <Text style={styles.fieldHint}>{characterCount(values.description)} characters in the marketplace description</Text> : null}
+            {type === "product" && field.key === "name" ? <Text style={styles.fieldHint}>{characterCount(values.name)} characters in the product title</Text> : null}
+            {type === "product" && field.key === "description" ? <Text style={styles.fieldHint}>{characterCount(values.description)} characters in the product description</Text> : null}
           ))}</View>)}
           {type === "order" ? <View style={styles.recipePreview}><Text style={styles.fieldLabel}>{actualPayoutEntered ? "Final payout received" : "Estimated payout after fees"}</Text><Text style={styles.orderPayoutEstimate}>{money(actualPayoutEntered ? asNumber(values.actualPayout, 0) : estimatedSalePayout, db.currency)}</Text><Text style={styles.bodyText}>{actualPayoutEntered ? "Final payout entered" : `${values.marketplace || "Direct"}: ${money(displayedFees, db.currency)} ${hasActualFees ? "actual fees" : "estimated fees"} · ${money(saleSubtotal, db.currency)} sale total`}</Text>{selectedSaleListing ? <Text style={styles.fieldHint}>Automatically linked listing: {selectedSaleListing.listingSku || selectedSaleListing.productName}</Text> : <Text style={styles.fieldHint}>No matching listing for this product and sales platform. The sale can still be saved without a listing link.</Text>}<Text style={styles.fieldHint}>Fee estimates use your optional marketplace rates in Settings. Enter actual fees or the final payout above when your statement is available.</Text></View> : null}
           {type === "product" ? <RecipeEditor components={db.components} recipe={values.recipe || []} onChange={(recipe) => setValues((old) => ({ ...old, recipe }))} /> : null}
@@ -2235,10 +2253,12 @@ function BulkEditModal({ visible, type, records = [], products = [], onClose, on
   useEffect(() => {
     setDrafts((records || []).map((record) => ({
       id: record.id,
-      name: String(type === "listing" ? record.productName || record.name || "" : record.name || ""),
+      name: String(type === "listing" || type === "listingDates" ? record.productName || record.name || "" : record.name || ""),
       description: String(record.description || ""),
+      startDate: String(record.startDate || ""),
+      relistDate: String(record.relistDate || ""),
       sku: record.sku || record.listingSku || "",
-      status: record.archived ? "Archived" : "",
+      status: record.archived ? "Archived" : record.status || "",
     })));
     setError("");
     setListingStatusFilter("All");
@@ -2251,7 +2271,7 @@ function BulkEditModal({ visible, type, records = [], products = [], onClose, on
     if (!record) return false;
     if (listingStatusFilter === "Active" && record.archived) return false;
     if (listingStatusFilter === "Archived" && !record.archived) return false;
-    const productId = type === "listing" ? record.productId : record.id;
+    const productId = type === "listing" || type === "listingDates" ? record.productId : record.id;
     return !selectedProductIds.length || selectedProductIds.includes(productId);
   });
   const productOptions = (products || []).map((product) => ({
@@ -2259,36 +2279,52 @@ function BulkEditModal({ visible, type, records = [], products = [], onClose, on
     value: product.id,
   }));
   const submit = () => {
-    const missingName = drafts.find((row) => !String(row.name || "").trim());
-    if (missingName) {
-      setError("Every saved item needs a name. Add a name or leave that row unchanged before saving.");
-      return;
+    if (type === "listingDates") {
+      const invalidDate = drafts.find((row) => [row.startDate, row.relistDate].some((value) => String(value || "").trim() && !parseDateInput(value)));
+      if (invalidDate) {
+        setError("Enter valid listing and relisting dates, or clear the date. You can type the date or use its calendar button.");
+        return;
+      }
+    } else {
+      const missingName = drafts.find((row) => !String(row.name || "").trim());
+      if (missingName) {
+        setError("Every saved item needs a name. Add a name or leave that row unchanged before saving.");
+        return;
+      }
     }
     onSave(type, drafts);
   };
-  const label = type === "listing" ? "listing" : "product";
+  const isListing = type === "listing" || type === "listingDates";
+  const label = isListing ? "listing" : "product";
   return <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
     <SafeAreaView style={styles.modalSafe}>
-      <View style={styles.modalHeader}><Pressable onPress={onClose}><Text style={styles.modalCancel}>Cancel</Text></Pressable><Text style={styles.modalTitle}>Bulk edit {label}s</Text><Pressable onPress={submit}><Text style={styles.modalSave}>Save all</Text></Pressable></View>
+      <View style={styles.modalHeader}><Pressable onPress={onClose}><Text style={styles.modalCancel}>Cancel</Text></Pressable><Text style={styles.modalTitle}>{type === "listingDates" ? "Bulk edit listing dates" : "Bulk edit " + label + "s"}</Text><Pressable onPress={submit}><Text style={styles.modalSave}>Save all</Text></Pressable></View>
       <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === "ios" ? "padding" : "height"}>
         <ScrollView contentContainerStyle={styles.formContent} keyboardShouldPersistTaps="handled">
-          <View style={styles.infoBanner}><Text style={styles.infoBannerTitle}>Edit saved {label}s</Text><Text style={styles.infoBannerText}>Change names and descriptions here. Other product, listing, inventory, and sales details stay as they are.</Text></View>
+          <View style={styles.infoBanner}><Text style={styles.infoBannerTitle}>{type === "listingDates" ? "Manage listing dates together" : "Edit saved " + label + "s"}</Text><Text style={styles.infoBannerText}>{type === "listingDates" ? "Review go-live dates and planned relisting dates for many listings in one place. Every row has its own calendar button. Saving keeps each listing’s other details intact." : "Change names and descriptions here. Character counts update as you type. Other product, listing, inventory, and sales details stay as they are."}</Text></View>
           <>
-            <ChoiceChips label={"Show " + (type === "listing" ? "listings" : "products")} options={[
+            <ChoiceChips label={"Show " + (isListing ? "listings" : "products")} options={[
               { label: "All · " + (records || []).length, value: "All" },
               { label: "Active · " + (records || []).filter((record) => !record.archived).length, value: "Active" },
               { label: "Archived · " + (records || []).filter((record) => !!record.archived).length, value: "Archived" },
             ]} value={listingStatusFilter} onChange={setListingStatusFilter} />
-            <Field field={{ label: type === "listing" ? "Filter listings by product" : "Choose products to edit", options: productOptions, multiple: true, searchable: true, searchPlaceholder: "Search products", placeholder: "All products" }} value={selectedProductIds} onChange={setSelectedProductIds} />
+            <Field field={{ label: isListing ? "Filter listings by product" : "Choose products to edit", options: productOptions, multiple: true, searchable: true, searchPlaceholder: "Search products", placeholder: "All products" }} value={selectedProductIds} onChange={setSelectedProductIds} />
             {selectedProductIds.length ? <View style={styles.actionRow}><Action label="Clear product filter" quiet onPress={() => setSelectedProductIds([])} /></View> : null}
             <Text style={styles.fieldHint}>Showing {visibleDrafts.length} of {drafts.length} {label}s. Choose one or more products to narrow the list.</Text>
           </>
           {visibleDrafts.length ? visibleDrafts.map((row) => <Card key={row.id} style={styles.historyCard}>
-            <View style={styles.cardTop}><View style={styles.flex}><Text style={styles.fieldLabel}>{row.sku || (type === "listing" ? "Listing" : "Product")}{row.status ? " · " + row.status : ""}</Text></View></View>
-            <Text style={styles.fieldLabel}>{type === "listing" ? "Listing name" : "Product name"}</Text>
-            <TextInput value={row.name} onChangeText={(value) => updateDraft(row.id, "name", value)} placeholder={type === "listing" ? "Listing name" : "Product name"} placeholderTextColor={COLORS.placeholder} style={styles.input} returnKeyType="next" />
-            <Text style={[styles.fieldLabel, { marginTop: 10 }]}>{type === "listing" ? "Listing description" : "Product description"}</Text>
-            <TextInput value={row.description} onChangeText={(value) => updateDraft(row.id, "description", value)} placeholder="Description (optional)" placeholderTextColor={COLORS.placeholder} style={[styles.input, styles.multilineInput]} multiline textAlignVertical="top" />
+            <View style={styles.cardTop}><View style={styles.flex}><Text style={styles.fieldLabel}>{row.sku || (isListing ? "Listing" : "Product")}{row.status ? " · " + row.status : ""}</Text>{isListing && row.name ? <Text style={styles.recordMeta}>{row.name}</Text> : null}</View></View>
+            {type === "listingDates" ? <>
+              <Field field={{ label: "Go-live / listing date", date: true }} value={row.startDate} onChange={(value) => updateDraft(row.id, "startDate", value)} />
+              <Field field={{ label: "Planned relisting date", date: true }} value={row.relistDate} onChange={(value) => updateDraft(row.id, "relistDate", value)} />
+            </> : <>
+              <Text style={styles.fieldLabel}>{isListing ? "Listing title" : "Product name"}</Text>
+              <TextInput value={row.name} onChangeText={(value) => updateDraft(row.id, "name", value)} placeholder={isListing ? "Listing title" : "Product name"} placeholderTextColor={COLORS.placeholder} style={styles.input} returnKeyType="next" />
+              <Text style={styles.fieldHint}>{characterCount(row.name)} characters in title</Text>
+              <Text style={[styles.fieldLabel, { marginTop: 10 }]}>{isListing ? "Listing description" : "Product description"}</Text>
+              <TextInput value={row.description} onChangeText={(value) => updateDraft(row.id, "description", value)} placeholder="Description (optional)" placeholderTextColor={COLORS.placeholder} style={[styles.input, styles.multilineInput]} multiline textAlignVertical="top" />
+              <Text style={styles.fieldHint}>{characterCount(row.description)} characters in description</Text>
+            </>}
           </Card>) : drafts.length ? <EmptyState title={"No " + label + "s match these filters"} body="Choose another status or clear the product filter to see more saved records." /> : <EmptyState title={"No saved " + label + "s"} body={"Create a " + label + " first. This tool only edits existing records."} />}
           {error ? <Text style={styles.errorText}>{error}</Text> : null}
           {drafts.length ? <Action label="Save all changes" onPress={submit} /> : null}
@@ -2614,8 +2650,8 @@ function SettingsAccordion({ title, subtitle, expanded, onPress, children }) {
 }
 
 function Pill({ text, tone }) {
-  const colorStyle = tone === "green" ? styles.pillGreen : tone === "amber" ? styles.pillAmber : tone === "red" ? styles.pillRed : styles.pillNeutral;
-  return <View style={[styles.pill, colorStyle]}><Text style={styles.pillText}>{text}</Text></View>;
+  const colorStyle = tone === "green" ? styles.pillGreen : tone === "amber" ? styles.pillAmber : tone === "red" ? styles.pillRed : tone === "gray" ? styles.pillGray : styles.pillNeutral;
+  return <View style={[styles.pill, colorStyle]}><Text style={[styles.pillText, tone === "gray" && styles.pillGrayText]}>{text}</Text></View>;
 }
 
 function Action({ label, onPress, quiet }) {
@@ -3113,6 +3149,20 @@ export default function App() {
           auditLog: (record.auditLog || []).concat([{ id: uid("audit"), action, date: now, changes: changed.map((field) => ({ field, from: record[field] == null ? null : record[field], to: changes[field] == null ? null : changes[field] })) }]),
         };
       };
+      if (type === "listingDates") {
+        const listings = old.listings.map((listing) => {
+          const draft = draftById.get(listing.id);
+          if (!draft) return listing;
+          const startDate = String(draft.startDate || "").trim() ? parseDateInput(draft.startDate) : "";
+          const relistDate = String(draft.relistDate || "").trim() ? parseDateInput(draft.relistDate) : "";
+          const changes = { startDate: startDate || "", relistDate: relistDate || "" };
+          if (!listing.archived && listing.status !== "Sold" && listing.status !== "Paused") {
+            changes.status = startDate ? startDate > TODAY ? "Scheduled" : "Active" : listing.status === "Scheduled" ? "Draft" : listing.status || "Draft";
+          }
+          return withAudit(listing, changes, "Bulk edit listing dates");
+        });
+        return withCurrentSkuCounters({ ...old, listings });
+      }
       if (type === "product") {
         const renamedProducts = new Map();
         const products = old.products.map((product) => {
@@ -3151,7 +3201,7 @@ export default function App() {
       return old;
     });
     setBulkEditType("");
-    setRecordActionNotice("Bulk name and description changes saved. Check the save status in the top bar.");
+    setRecordActionNotice(type === "listingDates" ? "Bulk listing dates saved. Check the save status in the top bar." : "Bulk name and description changes saved. Check the save status in the top bar.");
   };
   const saveBulkCreatedListings = ({ rows, marketplaces }) => {
     const selectedRows = Array.isArray(rows) ? rows : [];
@@ -3203,14 +3253,14 @@ export default function App() {
     setData((old) => withCurrentSkuCounters({
       ...old,
       listings: createdListings.concat(old.listings || []),
-      sortModes: { ...(old.sortModes || {}), listings: "productSkuAsc" },
+      sortModes: { ...(old.sortModes || {}), listings: "productSkuDesc" },
     }));
     setShowArchivedListings(false);
     setListingStatusFilter("All");
     setListingChannelFilter("All");
     setSearch("");
     setRecordPageLimits((old) => ({ ...old, listings: Math.max(old.listings || RECORD_PAGE_SIZE, (db.listings || []).length + createdListings.length) }));
-    setRecordActionNotice(createdListings.length + " listings created and sorted by product SKU.");
+    setRecordActionNotice(createdListings.length + " listings created and sorted by product SKU, high to low.");
     return true;
   };
   const requestRecordConfirmation = (confirmation) => setPendingRecordConfirmation(confirmation);
@@ -4961,7 +5011,7 @@ export default function App() {
       matchesAttributeFilter(item, "sizes", filters.sizes || "All") &&
       matchesAttributeFilter(item, "gender", filters.gender || "All") &&
       (!search || [item.name, item.sku, item.category, item.supplier, item.colors, item.materials, item.sizes, item.gender, item.notes].join(" ").toLowerCase().includes(search.toLowerCase()))
-    ), db.sortModes.components);
+    ), db.sortModes.components || "skuDesc");
     const pagedComponents = pageRows("components", list);
     const history = (db.componentTransactions || []).slice().sort((a, b) => String(b.date || b.createdAt || "").localeCompare(String(a.date || a.createdAt || "")));
     const activeComponents = db.components.filter(active);
@@ -4979,7 +5029,7 @@ export default function App() {
           <ChoiceChips label="Audience" options={["All", ...attributeFilterOptions(db.components, "genders", "gender")]} value={filters.gender || "All"} onChange={(value) => setAttributeFilter("components", "gender", value)} />
         </> : null}
         <View style={styles.actionRow}><Action label={showArchivedComponents ? "Show active components" : "Show archived components (" + (db.components.length - activeComponents.length) + ")"} quiet onPress={() => setShowArchivedComponents(!showArchivedComponents)} /></View>
-        <SortControl value={db.sortModes.components} onChange={(value) => saveSortMode("components", value)} />
+        <SortControl value={db.sortModes.components || "skuDesc"} options={CATALOG_SORT_OPTIONS} onChange={(value) => saveSortMode("components", value)} />
         {pagedComponents.length ? pagedComponents.map((item) => {
           const low = Number(item.quantity) <= Number(item.lowStock);
           const expanded = expandedComponentIds.includes(item.id);
@@ -5021,7 +5071,7 @@ export default function App() {
       matchesAttributeFilter(item, "sizes", filters.sizes || "All") &&
       matchesAttributeFilter(item, "gender", filters.gender || "All") &&
       (!search || [item.name, item.sku, item.category, item.colors, item.description, item.materials, item.sizes, item.gender, item.condition, item.notes].join(" ").toLowerCase().includes(search.toLowerCase()))
-    ), db.sortModes.products);
+    ), db.sortModes.products || "skuDesc");
     const pagedProducts = pageRows("products", list);
     const inventoryValue = activeProducts.reduce((sum, item) => sum + (Number(item.inventory) || 0) * (Number(item.price) || 0), 0);
     return (
@@ -5037,7 +5087,7 @@ export default function App() {
           <ChoiceChips label="Audience" options={["All", ...attributeFilterOptions(db.products, "genders", "gender")]} value={filters.gender || "All"} onChange={(value) => setAttributeFilter("products", "gender", value)} />
         </> : null}
         <View style={styles.actionRow}><Action label={showArchivedProducts ? "Show active products" : "Show archived products (" + (db.products.length - activeProducts.length) + ")"} quiet onPress={() => setShowArchivedProducts(!showArchivedProducts)} /></View>
-        <SortControl value={db.sortModes.products} onChange={(value) => saveSortMode("products", value)} />
+        <SortControl value={db.sortModes.products || "skuDesc"} options={CATALOG_SORT_OPTIONS} onChange={(value) => saveSortMode("products", value)} />
         {pagedProducts.length ? pagedProducts.map((item) => {
           const recipes = item.recipe || [];
           const productListings = db.listings.filter((listing) => listing.productId === item.id);
@@ -5132,7 +5182,7 @@ export default function App() {
         matchesListingAttribute(item, "gender", filters.gender || "All") &&
         (!search || [item.productName, item.productSku, item.listingSku, ...(item.marketplaces || (item.marketplace ? [item.marketplace] : [])), item.status, item.startDate, item.colors, item.materials, item.condition, item.notes, ...(item.discountPlans || []).flatMap((plan) => [plan.percent, plan.startDate, plan.endDate, plan.notes])].join(" ").toLowerCase().includes(search.toLowerCase()))
       ),
-      db.sortModes.listings
+      db.sortModes.listings || "productSkuDesc"
     );
     const pagedListings = pageRows("listings", list);
     const plans = activeListings.flatMap((listing) => [
@@ -5140,6 +5190,7 @@ export default function App() {
         { listing, discountPlan, date: discountPlan.startDate, kind: `${discountPlan.percent}% discount starts` },
         discountPlan.endDate ? { listing, discountPlan, date: discountPlan.endDate, kind: `${discountPlan.percent}% discount ends` } : null,
       ]),
+      listing.startDate && listing.startDate > TODAY ? { listing, date: listing.startDate, kind: "Listing goes live", listingStart: true } : null,
       listing.relistDate ? { listing, date: listing.relistDate, kind: "Relist listing" } : null,
     ]).filter((plan) => plan && plan.date >= TODAY).sort((a, b) => a.date.localeCompare(b.date));
     const scheduledDiscounts = activeListings.reduce((sum, item) => sum + (item.discountPlans || []).filter((plan) => plan.startDate && plan.startDate > TODAY).length, 0);
@@ -5241,7 +5292,7 @@ export default function App() {
     });
     return (
       <>
-        <View style={styles.infoBanner}><Text style={styles.infoBannerTitle}>Listings, promotion plans, and relists</Text><Text style={styles.infoBannerText}>Search and filter your marketplace listings. Live listings reserve the linked product’s finished stock, so it no longer shows as ready to sell. Archiving or pausing an unsold listing releases those finished units back to the product. Sold units stay deducted, and sold listings keep their sold count in history.</Text><View style={styles.actionRow}><Action label="＋ Add listing" onPress={() => beginAdd("listing")} /><Action label="Bulk create listings" onPress={() => setBulkCreateListingsOpen(true)} /><Action label="Bulk edit names & descriptions" quiet onPress={() => setBulkEditType("listing")} /><Action label="Listing analytics" quiet onPress={() => navigateToScreen("Listing Analytics")} /></View></View>
+        <View style={styles.infoBanner}><Text style={styles.infoBannerTitle}>Listings, promotion plans, and relists</Text><Text style={styles.infoBannerText}>Search and filter your marketplace listings. Live listings reserve the linked product’s finished stock, so it no longer shows as ready to sell. Archiving or pausing an unsold listing releases those finished units back to the product. Sold units stay deducted, and sold listings keep their sold count in history.</Text><View style={styles.actionRow}><Action label="＋ Add listing" onPress={() => beginAdd("listing")} /><Action label="Bulk create listings" onPress={() => setBulkCreateListingsOpen(true)} /><Action label="Bulk edit names & descriptions" quiet onPress={() => setBulkEditType("listing")} /><Action label="Bulk edit listing dates" quiet onPress={() => setBulkEditType("listingDates")} /><Action label="Listing analytics" quiet onPress={() => navigateToScreen("Listing Analytics")} /></View></View>
         <View style={styles.metricGrid}><Metric label="Live now" value={String(actualListings)} /><Metric label="Need archiving" value={String(needsArchive)} /><Metric label="Discounts planned" value={String(scheduledDiscounts)} /><Metric label="Relists coming up" value={String(relistsDue)} /></View>
         <View style={styles.metricGrid}><Metric label="Sales channels" value={String(listingChannels.size)} /><Metric label="Products represented" value={String(representedProducts.size)} /><Metric label="Combined asking prices" value={money(combinedAskingPrices, db.currency)} /><Metric label="Product descriptions to review" value={String(descriptionsToReview.length)} /></View>
         {descriptionsToUpdate.length ? <Card><Text style={styles.infoBannerTitle}>Product descriptions changed</Text><Text style={styles.bodyText}>{descriptionsToUpdate.length} listing{descriptionsToUpdate.length === 1 ? " has" : "s have"} a newer product description. Review the listing before copying so you can keep marketplace wording that needs to stay different.</Text>{descriptionsToUpdate.slice(0, 5).map((item) => <View key={item.id} style={styles.detailLine}><View style={styles.flex}><Text style={styles.detailLabel}>{item.productName}</Text><Text style={styles.fieldHint}>{item.marketplace || (item.marketplaces || []).join(", ") || "Marketplace not saved"}</Text></View><Action label="Update description" onPress={() => copyProductDescriptionToListing(item)} /></View>)}</Card> : null}
@@ -5259,23 +5310,25 @@ export default function App() {
            <ChoiceChips label="Size" options={["All", ...attributeFilterOptions([...db.listings, ...db.products], "sizes", "sizes")]} value={filters.sizes || "All"} onChange={(value) => setAttributeFilter("listings", "sizes", value)} />
            <ChoiceChips label="Audience" options={["All", ...attributeFilterOptions([...db.listings, ...db.products], "genders", "gender")]} value={filters.gender || "All"} onChange={(value) => setAttributeFilter("listings", "gender", value)} />
          </> : null}
-         <SortControl value={db.sortModes.listings} options={LISTING_SORT_OPTIONS} onChange={(value) => saveSortMode("listings", value)} />
+         <SortControl value={db.sortModes.listings || "productSkuDesc"} options={LISTING_SORT_OPTIONS} onChange={(value) => saveSortMode("listings", value)} />
         {plans.length ? <>
           <View style={styles.sectionHeadingRow}><Text style={styles.sectionTitle}>Promotion &amp; relisting calendar</Text><Text style={styles.subtle}>{plans.length} upcoming</Text></View>
            {plans.slice(0, 12).map((plan, index) => <Card key={plan.listing.id + plan.kind + (plan.discountPlan ? plan.discountPlan.id : index)} style={styles.historyCard}>
-             <View style={styles.cardTop}><View style={styles.flex}><Text style={styles.recordTitle}>{plan.kind} · {plan.listing.productName}</Text><Text style={styles.recordMeta}>{dateLabel(plan.date)} · {(plan.listing.marketplaces || []).join(", ") || plan.listing.marketplace}</Text></View></View><View style={styles.actionRow}><Action label={plan.discountPlan ? "Edit discount" : "Edit relisting"} quiet onPress={() => plan.discountPlan ? openDiscountEditor(plan.listing, plan.discountPlan) : editListing(plan.listing)} /><Action label={plan.discountPlan ? "Delete discount" : "Delete relisting"} quiet onPress={() => plan.discountPlan ? deleteDiscountPlan(plan.listing, plan.discountPlan) : clearRelistDate(plan.listing)} /></View>
+             <View style={styles.cardTop}><View style={styles.flex}><Text style={styles.recordTitle}>{plan.kind} · {plan.listing.productName}</Text><Text style={styles.recordMeta}>{dateLabel(plan.date)} · {(plan.listing.marketplaces || []).join(", ") || plan.listing.marketplace}</Text></View></View><View style={styles.actionRow}><Action label={plan.discountPlan ? "Edit discount" : plan.listingStart ? "Edit listing date" : "Edit relisting"} quiet onPress={() => plan.discountPlan ? openDiscountEditor(plan.listing, plan.discountPlan) : editListing(plan.listing)} /><Action label={plan.discountPlan ? "Delete discount" : plan.listingStart ? "Clear listing date" : "Delete relisting"} quiet onPress={() => plan.discountPlan ? deleteDiscountPlan(plan.listing, plan.discountPlan) : plan.listingStart ? beginEdit("listing", { ...plan.listing, startDate: "", price: String(plan.listing.price), marketplaces: plan.listing.marketplaces || [] }) : clearRelistDate(plan.listing)} /></View>
           </Card>)}
         </> : null}
         <View style={styles.sectionHeadingRow}><Text style={styles.sectionTitle}>{showArchivedListings ? "Archived listings" : "Your marketplace listings"}</Text></View>
         {pagedListings.length ? pagedListings.map((item) => {
           const soldCount = soldQuantityForListing(item, db.orders);
           const noProductStock = listingHasNoProductStock(item);
+          const daysListed = listingAgeDays(item);
+          const daysListedLabel = daysListed == null ? "Days listed not set" : daysListed + " day" + (daysListed === 1 ? "" : "s") + " listed";
           const statusText = item.archived
             ? soldCount > 0 ? soldCount + " sold · Archived" : item.status === "Sold" ? "Sold · Archived" : "Archived"
             : item.needsArchive ? item.status === "Sold" ? (soldCount || 1) + " sold · archive this listing" : "Out of stock · archive this listing"
               : noProductStock ? "Out of stock · make more or archive"
               : item.status === "Paused" ? "Paused" : item.startDate && item.startDate > TODAY ? "Planned" : item.status || "Draft";
-          return <Card key={item.id}><View style={styles.cardTop}><View style={styles.flex}><Text style={styles.recordTitle}>{item.productName}</Text>{item.listingNameOverride ? <Text style={styles.recordMeta}>Custom listing title</Text> : null}<Text style={styles.recordMeta}>{item.listingSku || "LIST SKU missing"} · {item.productSku || "Product SKU missing"}</Text><Text style={styles.recordMeta}>{item.marketplace || "Marketplace not saved"} · {item.price != null ? money(item.price, db.currency) : "Price not saved"}</Text>{soldCount > 0 ? <Text style={styles.recordMeta}>{soldCount} sold total on this listing</Text> : null}{listingDescriptionNeedsUpdate(item) ? <Text style={styles.errorText}>Product description changed · review details</Text> : null}</View><View style={{ alignItems: "flex-end", gap: 6 }}><Pill text={statusText} tone={item.needsArchive || noProductStock ? "red" : item.archived ? "neutral" : item.status === "Active" ? "green" : "amber"} /><Action label="Edit" quiet onPress={() => editListing(item)} /></View></View>
+          return <Card key={item.id}><View style={styles.cardTop}><View style={styles.flex}><Text style={styles.recordTitle}>{item.productName}</Text>{item.listingNameOverride ? <Text style={styles.recordMeta}>Custom listing title</Text> : null}<Text style={styles.recordMeta}>{item.listingSku || "LIST SKU missing"} · {item.productSku || "Product SKU missing"}</Text><Text style={styles.recordMeta}>{characterCount(item.productName)} title characters · {characterCount(item.description)} description characters</Text><Text style={styles.recordMeta}>{item.marketplace || "Marketplace not saved"} · {item.price != null ? money(item.price, db.currency) : "Price not saved"}</Text>{soldCount > 0 ? <Text style={styles.recordMeta}>{soldCount} sold total on this listing</Text> : null}{listingDescriptionNeedsUpdate(item) ? <Text style={styles.errorText}>Product description changed · review details</Text> : null}</View><View style={{ alignItems: "flex-end", gap: 6 }}><Pill text={statusText} tone={item.archived || item.status === "Sold" ? "gray" : item.needsArchive || noProductStock ? "red" : item.status === "Active" ? "green" : "amber"} /><Pill text={daysListedLabel} tone={listingAgeTone(item)} /><Action label="Edit" quiet onPress={() => editListing(item)} /></View></View>
             <View style={styles.actionRow}><Action label={expandedListingIds.includes(item.id) ? "Hide details" : "Show details"} quiet onPress={() => setExpandedListingIds((old) => old.includes(item.id) ? [] : [item.id])} /><Action label="Copy title" quiet onPress={() => copyListingText(item, "title")} /><Action label="Copy description" quiet onPress={() => copyListingText(item, "description")} /></View>
             {expandedListingIds.includes(item.id) ? <>
             {(() => {
@@ -5291,7 +5344,7 @@ export default function App() {
               const hasFeeEstimate = payoutEstimates.some((estimate) => estimate.configured);
               return <>
                 <View style={styles.recipePreview}><Text style={styles.fieldLabel}>Linked product and materials</Text>{product ? <><Text style={styles.bodyText}>{product.name} · {product.sku} · {productReadyToSell} ready to sell · {productReserved} reserved in live listings · {productOnHand} finished on hand · {(product.recipe || []).length} component types in recipe</Text>{(product.recipe || []).map((part) => { const component = db.components.find((row) => row.id === part.componentId); return <Text key={part.componentId} style={styles.fieldHint}>{part.name}: {part.quantity} {part.unit || component && component.unit || "units"} per product · {component ? component.quantity + " available" : "component missing"}</Text>; })}<View style={styles.actionRow}><Action label="Open product catalog" quiet onPress={() => navigateToScreen("Products")} /><Action label="Copy product name" quiet onPress={() => copyProductNameToListing(item)} />{product.archived ? <Action label="Restore product and materials" onPress={() => restoreRecord("products", product)} /> : <Action label={Number(product.inventory) > 0 ? "Archive product · return materials for unsold stock" : "Archive product · no materials to return"} onPress={() => archiveRecord("products", product, "product")} />}</View><Text style={styles.fieldHint}>Archiving this listing releases its unsold finished units back to ready-to-sell stock. Component materials remain consumed because the product still exists. Product archiving returns materials only for finished units still in stock; sold units stay consumed.</Text></> : <Text style={styles.bodyText}>The linked product is missing. Check the product catalog and this listing’s saved link.</Text>}</View>
-                <View style={styles.recipePreview}><Text style={styles.fieldLabel}>Marketplace description</Text>{item.description ? <Text style={styles.bodyText}>{item.description}</Text> : <Text style={styles.fieldHint}>No marketplace description saved yet.</Text>}{item.descriptionSource === "product" ? <Text style={listingDescriptionNeedsUpdate(item) ? styles.errorText : styles.fieldHint}>{listingDescriptionNeedsUpdate(item) ? "The product description changed since this copy was made." : "Copied from the linked product."}</Text> : productDescriptionDiffers(item) ? <Text style={styles.fieldHint}>This listing keeps its own marketplace description. The linked product text is different.</Text> : <Text style={styles.fieldHint}>This listing description currently matches the linked product.</Text>}<View style={styles.actionRow}><Action label={item.description ? "Edit description" : "Add description"} quiet onPress={() => editListing(item)} /><Action label={listingDescriptionNeedsUpdate(item) ? "Update from product" : "Copy product description"} onPress={() => copyProductDescriptionToListing(item)} /></View></View>
+                <View style={styles.recipePreview}><Text style={styles.fieldLabel}>Marketplace description · {characterCount(item.description)} characters</Text>{item.description ? <Text style={styles.bodyText}>{item.description}</Text> : <Text style={styles.fieldHint}>No marketplace description saved yet.</Text>}{item.descriptionSource === "product" ? <Text style={listingDescriptionNeedsUpdate(item) ? styles.errorText : styles.fieldHint}>{listingDescriptionNeedsUpdate(item) ? "The product description changed since this copy was made." : "Copied from the linked product."}</Text> : productDescriptionDiffers(item) ? <Text style={styles.fieldHint}>This listing keeps its own marketplace description. The linked product text is different.</Text> : <Text style={styles.fieldHint}>This listing description currently matches the linked product.</Text>}<View style={styles.actionRow}><Action label={item.description ? "Edit description" : "Add description"} quiet onPress={() => editListing(item)} /><Action label={listingDescriptionNeedsUpdate(item) ? "Update from product" : "Copy product description"} onPress={() => copyProductDescriptionToListing(item)} /></View></View>
                 <View style={styles.channelChipRow}>{channels.map((channel) => <View key={channel} style={styles.channelChip}><Text style={styles.channelChipText}>{channel}</Text></View>)}</View>
                 <View style={styles.detailRow}><Text style={styles.detailText}>List price {money(item.price, db.currency)}</Text><Pill text={currentPlan ? `${currentPlan.percent}% off now` : `${discountPlans.length} discount plan${discountPlans.length === 1 ? "" : "s"}`} tone={currentPlan ? "green" : "neutral"} /></View>
                 {currentPlan ? <Text style={styles.bodyText}>Current sale price: {money(Number(item.price) * (1 - Number(currentPlan.percent) / 100), db.currency)} · through {currentPlan.endDate ? dateLabel(currentPlan.endDate) : "no end date"}</Text> : null}
@@ -6987,7 +7040,7 @@ export default function App() {
         </View>
       </Modal>
       <RecordModal visible={!!modalType} type={modalType} record={editingRecord} db={db} prefill={formPrefill} onClose={closeForm} onSave={saveRecord} onManageOptions={manageDropdownFromField} />
-      <BulkEditModal visible={!!bulkEditType} type={bulkEditType} records={bulkEditType === "listing" ? db.listings : db.products} products={db.products} onClose={() => setBulkEditType("")} onSave={saveBulkEdits} />
+      <BulkEditModal visible={!!bulkEditType} type={bulkEditType} records={bulkEditType === "listing" || bulkEditType === "listingDates" ? db.listings : db.products} products={db.products} onClose={() => setBulkEditType("")} onSave={saveBulkEdits} />
       <BulkCreateListingsModal visible={bulkCreateListingsOpen} products={db.products} listings={db.listings} marketplaceOptions={(db.dropdownOptions && db.dropdownOptions.marketplaces) || DEFAULT_DROPDOWN_OPTIONS.marketplaces} currency={db.currency} onClose={() => setBulkCreateListingsOpen(false)} onSave={saveBulkCreatedListings} />
       <ThemeChooserModal visible={themePickerOpen} currentName={db.themeName} customTheme={db.customTheme} onClose={() => setThemePickerOpen(false)} onSelect={(name) => { chooseTheme(name); setThemePickerOpen(false); }} />
       <HelpModal visible={helpOpen} screen={isFulfillmentPage ? "Orders" : screen} onClose={() => setHelpOpen(false)} />
@@ -7275,6 +7328,8 @@ function makeStyles() { return StyleSheet.create({
   pillGreen: { backgroundColor: COLORS.sage },
   pillAmber: { backgroundColor: COLORS.amberBg },
   pillRed: { backgroundColor: COLORS.redBg },
+  pillGray: { backgroundColor: "#D7D7D7" },
+  pillGrayText: { color: "#424242" },
   pillNeutral: { backgroundColor: COLORS.softAlt },
   pillText: { fontSize: 9, fontWeight: "700", color: COLORS.ink },
   attentionList: { backgroundColor: COLORS.card, borderRadius: 16, borderWidth: 1, borderColor: COLORS.line, paddingHorizontal: 13, marginBottom: 10 },
