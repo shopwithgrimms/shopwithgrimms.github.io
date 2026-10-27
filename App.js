@@ -2136,7 +2136,8 @@ function RecordModal({ visible, type, record, db, prefill, onClose, onSave, onMa
           {formSections.map((section) => <View key={section.title} style={styles.formSection}>
             <View style={styles.formSectionHeading}><View style={styles.formSectionMark} /><View style={styles.flex}><Text style={styles.formSectionTitle}>{section.title}</Text><Text style={styles.formSectionText}>{section.description}</Text></View></View>
           {section.fields.map((field) => (
-            <Field key={field.key} field={field} value={values[field.key]} onChange={(value) => setValues((old) => {
+            <React.Fragment key={field.key}>
+            <Field field={field} value={values[field.key]} onChange={(value) => setValues((old) => {
               const next = { ...old, [field.key]: value };
               if ((type === "listing" || type === "order") && field.key === "productId") {
                 const selected = db.products.find((item) => item.id === value);
@@ -2183,6 +2184,7 @@ function RecordModal({ visible, type, record, db, prefill, onClose, onSave, onMa
             {type === "listing" && field.key === "description" ? <Text style={styles.fieldHint}>{characterCount(values.description)} characters in the marketplace description</Text> : null}
             {type === "product" && field.key === "name" ? <Text style={styles.fieldHint}>{characterCount(values.name)} characters in the product title</Text> : null}
             {type === "product" && field.key === "description" ? <Text style={styles.fieldHint}>{characterCount(values.description)} characters in the product description</Text> : null}
+            </React.Fragment>
           ))}</View>)}
           {type === "order" ? <View style={styles.recipePreview}><Text style={styles.fieldLabel}>{actualPayoutEntered ? "Final payout received" : "Estimated payout after fees"}</Text><Text style={styles.orderPayoutEstimate}>{money(actualPayoutEntered ? asNumber(values.actualPayout, 0) : estimatedSalePayout, db.currency)}</Text><Text style={styles.bodyText}>{actualPayoutEntered ? "Final payout entered" : `${values.marketplace || "Direct"}: ${money(displayedFees, db.currency)} ${hasActualFees ? "actual fees" : "estimated fees"} · ${money(saleSubtotal, db.currency)} sale total`}</Text>{selectedSaleListing ? <Text style={styles.fieldHint}>Automatically linked listing: {selectedSaleListing.listingSku || selectedSaleListing.productName}</Text> : <Text style={styles.fieldHint}>No matching listing for this product and sales platform. The sale can still be saved without a listing link.</Text>}<Text style={styles.fieldHint}>Fee estimates use your optional marketplace rates in Settings. Enter actual fees or the final payout above when your statement is available.</Text></View> : null}
           {type === "product" ? <RecipeEditor components={db.components} recipe={values.recipe || []} onChange={(recipe) => setValues((old) => ({ ...old, recipe }))} /> : null}
